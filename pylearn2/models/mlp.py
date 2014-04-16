@@ -365,6 +365,47 @@ class Layer(Model):
         raise NotImplementedError(str(type(self)) + " does not implement "
                 "set_input_space.")
 
+    def dropout_fprop(self, state_below, default_input_include_prob=0.5,
+                      input_include_probs=None, default_input_scale=2.,
+                      input_scales=None, per_example=True, theano_rng=None):
+        """
+        TODO
+        
+        """
+        if input_include_probs is None:
+            input_include_probs = {}
+
+        if input_scales is None:
+            input_scales = {}
+
+        if theano_rng is None:
+            theano_rng = MRG_RandomStreams(max(self.rng.randint(2 ** 15), 1))
+
+        layer_name = self.layer_name
+
+        if layer_name in input_include_probs:
+            include_prob = input_include_probs[layer_name]
+        else:
+            include_prob = default_input_include_prob
+
+        if layer_name in input_scales:
+            scale = input_scales[layer_name]
+        else:
+            scale = default_input_scale
+
+        state_below = apply_dropout(
+                state=state_below,
+                include_prob=include_prob,
+                theano_rng=theano_rng,
+                scale=scale,
+                mask_value=self.dropout_input_mask_value,
+                input_space=self.get_input_space(),
+                per_example=per_example
+        )
+        state_below = self.fprop(state_below)
+
+        return state_below
+
 
 class MLP(Layer):
     """
@@ -801,7 +842,7 @@ class MLP(Layer):
 
     def dropout_fprop(self, state_below, default_input_include_prob=0.5,
                       input_include_probs=None, default_input_scale=2.,
-                      input_scales=None, per_example=True):
+                      input_scales=None, per_example=True, theano_rng=None):
         """
         Returns the output of the MLP, when applying dropout to the input and
         intermediate layers. Each input to each layer is randomly included or
@@ -823,6 +864,7 @@ class MLP(Layer):
         input_include_probs : WRITEME
         default_input_scale : WRITEME
         input_scales : WRITEME
+        theano_rng : WRITEME
         per_example : bool, optional
             Sample a different mask value for every example in a batch.
             Defaults to `True`. If `False`, sample one mask per mini-batch.
@@ -834,40 +876,19 @@ class MLP(Layer):
                       "fixed_var descr could increase the memory usage "
                       "though.")
 
-        if input_include_probs is None:
-            input_include_probs = {}
-
-        if input_scales is None:
-            input_scales = {}
-
-        self._validate_layer_names(list(input_include_probs.keys()))
-        self._validate_layer_names(list(input_scales.keys()))
-
-        theano_rng = MRG_RandomStreams(max(self.rng.randint(2 ** 15), 1))
+        if theano_rng is None:
+            theano_rng = MRG_RandomStreams(max(self.rng.randint(2 ** 15), 1))
 
         for layer in self.layers:
-            layer_name = layer.layer_name
-
-            if layer_name in input_include_probs:
-                include_prob = input_include_probs[layer_name]
-            else:
-                include_prob = default_input_include_prob
-
-            if layer_name in input_scales:
-                scale = input_scales[layer_name]
-            else:
-                scale = default_input_scale
-
-            state_below = apply_dropout(
-                state=state_below,
-                include_prob=include_prob,
-                theano_rng=theano_rng,
-                scale=scale,
-                mask_value=layer.dropout_input_mask_value,
-                input_space=layer.get_input_space(),
-                per_example=per_example
-            )
-            state_below = layer.fprop(state_below)
+            state_below = layer.dropout_fprop(
+                      state_below,
+                      default_input_include_prob=default_input_include_prob,
+                      input_include_probs=input_include_probs,
+                      default_input_scale=default_input_scale,
+                      input_scales=input_scales,
+                      per_example=per_example,
+                      theano_rng=theano_rng
+                  )
 
         return state_below
 
