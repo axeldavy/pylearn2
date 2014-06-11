@@ -333,7 +333,7 @@ class Maxout(Layer):
             coeff = float(coeff)
         assert isinstance(coeff, float) or hasattr(coeff, 'dtype')
         W, = self.transformer.get_params()
-        return coeff * T.abs(W).sum()
+        return 0#coeff * T.abs(W).sum()
 
     @functools.wraps(Model.get_weights)
     def get_weights(self):
@@ -842,6 +842,10 @@ class MaxoutConvC01B(Layer):
         W, = self.transformer.get_params()
         return coeff * T.sqr(W).sum()
 
+    @functools.wraps(Layer.get_l1_weight_decay)
+    def get_l1_weight_decay(self, coeffs):
+        return 0
+
     @functools.wraps(Layer.set_weights)
     def set_weights(self, weights):
         W, = self.transformer.get_params()
@@ -857,7 +861,9 @@ class MaxoutConvC01B(Layer):
 
     @functools.wraps(Model.get_weights_topo)
     def get_weights_topo(self):
-        return self.transformer.get_weights_topo()
+#       return self.transformer.get_weights_topo()
+        T = self.transformer.get_weights_topo()
+        return T[...,0:3]
 
     @functools.wraps(Layer.get_monitoring_channels)
     def get_monitoring_channels(self):
@@ -1368,6 +1374,11 @@ class MaxoutLocalC01B(Layer):
         assert isinstance(coeff, float) or hasattr(coeff, 'dtype')
         W, = self.transformer.get_params()
         return coeff * T.sqr(W).sum()
+
+    @functools.wraps(Layer.get_l1_weight_decay)
+    def get_l1_weight_decay(self, coeffs):
+        return 0
+
 
     @functools.wraps(Layer.set_weights)
     def set_weights(self, weights):

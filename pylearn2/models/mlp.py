@@ -442,6 +442,8 @@ class MLP(Layer):
         assert all(isinstance(layer, Layer) for layer in layers)
         assert len(layers) >= 1
 
+        if layer_name is None and input_space is None and nvis is None:
+            layer_name = layers[0].layer_name # TODO better
         self.layer_name = layer_name
 
         self.layer_names = set()
@@ -840,6 +842,7 @@ class MLP(Layer):
 
         return self.layers[0].get_weights_topo()
 
+    @wraps(Layer.dropout_fprop)
     def dropout_fprop(self, state_below, default_input_include_prob=0.5,
                       input_include_probs=None, default_input_scale=2.,
                       input_scales=None, per_example=True, theano_rng=None):
@@ -1139,7 +1142,8 @@ class Softmax(Layer):
         if not no_affine:
             self.b = sharedX(np.zeros((n_classes,)), name='softmax_b')
             if init_bias_target_marginals:
-                marginals = init_bias_target_marginals.y.mean(axis=0)
+                marginals = np.array([sum(init_bias_target_marginals.y[:,l]) for l in range(init_bias_target_marginals.y.shape[1])]) / init_bias_target_marginals.y.shape[0]
+                print marginals
                 assert marginals.ndim == 1
                 b = pseudoinverse_softmax_numpy(marginals).astype(self.b.dtype)
                 assert b.ndim == 1
@@ -1490,6 +1494,268 @@ class Softmax(Layer):
                 desired_norms = T.clip(col_norms, 0, self.max_col_norm)
                 updates[W] = updated_W * (desired_norms / (1e-7 + col_norms))
 
+
+class MultiSoftmax(Layer):
+    """
+    .. todo::
+
+        WRITEME (including parameters list)
+
+    Parameters
+    ----------
+    n_outputs : WRITEME
+    n_classes : WRITEME
+    layer_name : WRITEME
+    irange : WRITEME
+    istdev : WRITEME
+    sparse_init : WRITEME
+    W_lr_scale : WRITEME
+    b_lr_scale : WRITEME
+    max_row_norm : WRITEME
+    max_col_norm : WRITEME
+    init_bias_target_marginals : WRITEME
+    """
+    def __init__(self, n_outputs, n_classes, layer_name, irange=None,
+                 istdev=None,
+                 sparse_init=None, W_lr_scale=None,
+                 b_lr_scale=None, max_row_norm=None,
+                 max_col_norm=None, init_bias_target_marginals=None):
+
+        super(MultiSoftmax, self).__init__()
+
+        if isinstance(W_lr_scale, str):
+            W_lr_scale = float(W_lr_scale)
+
+        self.__dict__.update(locals())
+        del self.self
+        del self.init_bias_target_marginals
+
+        assert isinstance(n_outputs, py_integer_types)
+        assert isinstance(n_classes, py_integer_types)
+
+        self.output_space = CompositeSpace(tuple(VectorSpace(n_classes) for i in xrange(n_outputs)))
+        self.b = tuple(sharedX(np.zeros((n_classes,)), name='softmax_b') for i in xrange(n_outputs))
+        if init_bias_target_marginals:
+            marginals = np.array([sum(init_bias_target_marginals.y[:,l]) for l in range(init_bias_target_marginals.y.shape[1])]) / init_bias_target_marginals.y.shape[0]
+            print marginals
+            assert marginals.ndim == 1
+            for b_ in self.b:
+                b__ = pseudoinverse_softmax_numpy(marginals).astype(b_.dtype)
+                assert b__.ndim == 1
+                assert b__.dtype == b_.dtype
+                b_.set_value(b__)
+
+    @wraps(Layer.get_lr_scalers)
+    def get_lr_scalers(self):
+
+        rval = OrderedDict()
+
+        if self.W_lr_scale is not None:
+            assert isinstance(self.W_lr_scale, float)
+            for W_ in self.W:
+                rval[W_] = self.W_lr_scale
+
+        if not hasattr(self, 'b_lr_scale'):
+            self.b_lr_scale = None
+
+        if self.b_lr_scale is not None:
+            assert isinstance(self.b_lr_scale, float)
+            for b_ in self.b:
+                rval[b_] = self.b_lr_scale
+
+        return rval
+
+    @wraps(Layer.get_layer_monitoring_channels)
+    def get_layer_monitoring_channels(self, state_below=None,
+                                    state=None, targets=None):
+
+        rval = OrderedDict()
+
+        for i in xrange(self.n_outputs):
+            W_ = self.W[i]
+
+            assert W_.ndim == 2
+
+            sq_W = T.sqr(W_)
+
+            row_norms = T.sqrt(sq_W.sum(axis=1))
+            col_norms = T.sqrt(sq_W.sum(axis=0))
+
+            rval.update(OrderedDict([('row_norms_min'+'_'+str(i),  row_norms.min()),
+                            ('row_norms_mean'+'_'+str(i), row_norms.mean()),
+                            ('row_norms_max'+'_'+str(i),  row_norms.max()),
+                            ('col_norms_min'+'_'+str(i),  col_norms.min()),
+                            ('col_norms_mean'+'_'+str(i), col_norms.mean()),
+                            ('col_norms_max'+'_'+str(i),  col_norms.max()), ]))
+
+        if (state_below is not None) or (state is not None):
+            if state is None:
+                state = self.fprop(state_below)
+
+            mx = state.max(axis=1)
+
+            rval.update(OrderedDict([('mean_max_class', mx.mean()),
+                                ('max_max_class', mx.max()),
+                                ('min_max_class', mx.min())]))
+
+            if targets is not None:
+                for i in xrange(self.n_outputs):
+                    y_hat = T.argmax(state[i], axis=1)
+                    y = T.argmax(targets[i], axis=1)
+                    misclass = T.neq(y, y_hat).mean()
+                    misclass = T.cast(misclass, config.floatX)
+                    rval['misclass'+'_'+str(i)] = misclass
+                rval['nll'] = self.cost(Y_hat=state, Y=targets)
+
+        return rval
+
+    @wraps(Layer.set_input_space)
+    def set_input_space(self, space):
+
+        self.input_space = space
+
+        if not isinstance(space, Space):
+            raise TypeError("Expected Space, got " +
+                            str(space)+" of type "+str(type(space)))
+
+        self.input_dim = space.get_total_dimension()
+        self.needs_reformat = not isinstance(space, VectorSpace)
+
+        desired_dim = self.input_dim
+        self.desired_space = VectorSpace(desired_dim)
+
+        if not self.needs_reformat:
+            assert self.desired_space == self.input_space
+
+        rng = self.mlp.rng
+
+        self.W = []
+        for i in xrange(self.n_outputs):
+            if self.irange is not None:
+                assert self.istdev is None
+                assert self.sparse_init is None
+                W = rng.uniform(-self.irange,
+                                self.irange,
+                                (self.input_dim, self.n_classes))
+            elif self.istdev is not None:
+                assert self.sparse_init is None
+                W = rng.randn(self.input_dim, self.n_classes) * self.istdev
+            else:
+                assert self.sparse_init is not None
+                W = np.zeros((self.input_dim, self.n_classes))
+                for i in xrange(self.n_classes):
+                    for j in xrange(self.sparse_init):
+                        idx = rng.randint(0, self.input_dim)
+                        while W[idx, i] != 0.:
+                            idx = rng.randint(0, self.input_dim)
+                        W[idx, i] = rng.randn()
+
+            self.W.append(sharedX(W,  'softmax_W'))
+
+        self._params = []
+        self._params.extend(self.W)
+        self._params.extend(self.b)
+
+    @wraps(Layer.fprop)
+    def fprop(self, state_below):
+
+        self.input_space.validate(state_below)
+
+        if self.needs_reformat:
+            state_below = self.input_space.format_as(state_below,
+                                                     self.desired_space)
+
+        self.desired_space.validate(state_below)
+        assert state_below.ndim == 2
+
+        rval = []
+
+        for i in xrange(self.n_outputs):
+            W_ = self.W[i]
+            b_ = self.b[i]
+
+            assert W_.ndim == 2
+
+            Z = T.dot(state_below, W_) + b_
+
+            rval.append(T.nnet.softmax(Z))
+
+        rval = tuple(rval)
+
+        return rval
+
+    @wraps(Layer.cost)
+    def cost(self, Y, Y_hat):
+
+        assert isinstance(Y_hat, tuple)
+        assert len(Y_hat) == self.n_outputs
+        assert isinstance(Y, tuple)
+        assert len(Y) == self.n_outputs
+
+        rval = 0
+        for i in xrange(self.n_outputs):
+            Y_ = Y[i]
+            Y_hat_ = Y_hat[i]
+            assert hasattr(Y_hat_, 'owner')
+            owner = Y_hat_.owner
+            assert owner is not None
+            op = owner.op
+            if isinstance(op, Print):
+                assert len(owner.inputs) == 1
+                Y_hat_, = owner.inputs
+                owner = Y_hat_.owner
+                op = owner.op
+            assert isinstance(op, T.nnet.Softmax)
+            z, = owner.inputs
+            assert z.ndim == 2
+
+            z = z - z.max(axis=1).dimshuffle(0, 'x')
+            log_prob = z - T.log(T.exp(z).sum(axis=1).dimshuffle(0, 'x'))
+            # we use sum and not mean because this is really one variable per row
+            log_prob_of = (Y_ * log_prob).sum(axis=1)
+            assert log_prob_of.ndim == 1
+
+            rval += log_prob_of.mean()
+
+        return - rval
+
+    @wraps(Layer.get_weight_decay)
+    def get_weight_decay(self, coeff):
+
+        if isinstance(coeff, str):
+            coeff = float(coeff)
+        assert isinstance(coeff, float) or hasattr(coeff, 'dtype')
+        rval = [coeff * T.sqr(W_).sum() for W_ in self.W]
+        return reduce(lambda x, y: x + y, rval)
+
+    @wraps(Layer.get_l1_weight_decay)
+    def get_l1_weight_decay(self, coeff):
+
+        if isinstance(coeff, str):
+            coeff = float(coeff)
+        assert isinstance(coeff, float) or hasattr(coeff, 'dtype')
+        rval = [coeff * abs(W_).sum() for W_ in self.W]
+        return reduce(lambda x, y: x + y, rval)
+
+    @wraps(Layer.censor_updates)
+    def censor_updates(self, updates):
+
+        if self.max_row_norm is not None:
+            for W_ in self.W:
+                if W_ in updates:
+                    updated_W = updates[W_]
+                    row_norms = T.sqrt(T.sum(T.sqr(updated_W), axis=1))
+                    desired_norms = T.clip(row_norms, 0, self.max_row_norm)
+                    scales = desired_norms / (1e-7 + row_norms)
+                    updates[W_] = updated_W * scales.dimshuffle(0, 'x')
+        if self.max_col_norm is not None:
+            assert self.max_row_norm is None
+            for W_ in self.W:
+                if W_ in updates:
+                    updated_W = updates[W_]
+                    col_norms = T.sqrt(T.sum(T.sqr(updated_W), axis=0))
+                    desired_norms = T.clip(col_norms, 0, self.max_col_norm)
+                    updates[W_] = updated_W * (desired_norms / (1e-7 + col_norms))
 
 class SoftmaxPool(Layer):
     """
@@ -4072,6 +4338,173 @@ class PretrainedLayer(Layer):
 
         return self.layer_content.upward_pass(state_below)
 
+class PretrainedLayerLearn(Layer):
+    """
+    A layer whose weights are initialized, and optionally fixed,
+    based on prior training.
+
+    .. todo::
+
+        WRITEME properly
+
+    layer_content: A Model that implements "upward_pass", such as an
+        RBM or an Autoencoder
+    freeze_params: If True, regard layer_conent's parameters as fixed
+        If False, they become parameters of this layer and can be
+        fine-tuned to optimize the MLP's cost function.
+    """
+
+    def __init__(self, layer_name, layer_content, freeze_params=False):
+        super(PretrainedLayerLearn, self).__init__()
+        self.__dict__.update(locals())
+        del self.self
+
+    @wraps(Layer.set_input_space)
+    def set_input_space(self, space):
+
+        assert self.get_input_space() == space
+
+    @wraps(Layer.get_params)
+    def get_params(self):
+
+        if self.freeze_params:
+            return []
+        return self.layer_content.get_params()
+
+    @wraps(Layer.get_input_space)
+    def get_input_space(self):
+
+        return self.layer_content.get_input_space()
+
+    @wraps(Layer.get_output_space)
+    def get_output_space(self):
+
+        return self.layer_content.get_output_space()
+
+    @wraps(Layer.get_monitoring_channels)
+    def get_monitoring_channels(self):
+        warnings.warn("Layer.get_monitoring_channels is " + \
+                    "deprecated. Use get_layer_monitoring_channels " + \
+                    "instead. Layer.get_monitoring_channels " + \
+                    "will be removed on or after september 24th 2014",
+                    stacklevel=2)
+
+        return self.layer_content.get_monitoring_channels()
+#        return OrderedDict([])
+
+    @wraps(Layer.get_layer_monitoring_channels)
+    def get_layer_monitoring_channels(self, state_below=None,
+                                    state=None, targets=None):
+        r = self.layer_content.layers[-1].get_layer_monitoring_channels(state_below=state_below, state=state, targets=targets)
+        print r
+        return r
+#        return OrderedDict([])
+
+    @wraps(Layer.fprop)
+    def fprop(self, state_below):
+        return self.layer_content.fprop(state_below)
+
+    @wraps(Layer.get_weight_decay)
+    def get_weight_decay(self, coeffs):
+        return self.layer_content.get_weight_decay(coeffs)
+
+    @wraps(Layer.get_l1_weight_decay)
+    def get_l1_weight_decay(self, coeffs):
+        return self.layer_content.get_l1_weight_decay(coeffs)
+    
+    @wraps(Layer.dropout_fprop)
+    def dropout_fprop(self, state_below, default_input_include_prob=0.5,
+                      input_include_probs=None, default_input_scale=2.,
+                      input_scales=None, per_example=True, theano_rng=None):
+
+        return self.layer_content.dropout_fprop(state_below, default_input_include_prob=default_input_include_prob,
+                      input_include_probs=input_include_probs, default_input_scale=default_input_scale,
+                      input_scales=input_scales, per_example=per_example, theano_rng=theano_rng)
+
+    @wraps(Layer.get_lr_scalers)
+    def get_lr_scalers(self):
+        return self.layer_content.get_lr_scalers()
+
+    @wraps(Layer.cost)
+    def cost(self, Y, Y_hat):
+        return self.layer_content.cost(Y, Y_hat)
+    
+    @wraps(Layer.cost_matrix)
+    def cost_matrix(self, Y, Y_hat):
+        return self.layer_content.cost_matrix(Y, Y_hat)
+
+class PretrainedLayerStop(Layer):
+    """
+    A layer whose weights are initialized, and optionally fixed,
+    based on prior training.
+
+    .. todo::
+
+        WRITEME properly
+
+    layer_content: A Model that implements "upward_pass", such as an
+        RBM or an Autoencoder
+    freeze_params: If True, regard layer_conent's parameters as fixed
+        If False, they become parameters of this layer and can be
+        fine-tuned to optimize the MLP's cost function.
+    """
+
+    def __init__(self, layer_name, layer_content, freeze_params=False):
+        super(PretrainedLayerStop, self).__init__()
+        self.__dict__.update(locals())
+        del self.self
+
+    @wraps(Layer.set_input_space)
+    def set_input_space(self, space):
+
+        assert self.get_input_space() == space
+
+    @wraps(Layer.get_params)
+    def get_params(self):
+
+        #if self.freeze_params:
+        #    return []
+        #return self.layer_content.get_params()
+        return []
+
+    @wraps(Layer.get_input_space)
+    def get_input_space(self):
+
+        return self.layer_content.get_input_space()
+
+    @wraps(Layer.get_output_space)
+    def get_output_space(self):
+
+        return self.layer_content.get_output_space()
+
+    @wraps(Layer.get_monitoring_channels)
+    def get_monitoring_channels(self):
+        warnings.warn("Layer.get_monitoring_channels is " + \
+                    "deprecated. Use get_layer_monitoring_channels " + \
+                    "instead. Layer.get_monitoring_channels " + \
+                    "will be removed on or after september 24th 2014",
+                    stacklevel=2)
+
+        return OrderedDict([])
+
+    @wraps(Layer.get_layer_monitoring_channels)
+    def get_layer_monitoring_channels(self, state_below=None,
+                                    state=None, targets=None):
+        return OrderedDict([])
+
+    @wraps(Layer.fprop)
+    def fprop(self, state_below):
+
+        return self.layer_content.fprop(state_below)#upward_pass(state_below)
+    @wraps(Layer.get_weight_decay)
+    def get_weight_decay(self, coeffs):
+        return 0
+
+    @wraps(Layer.get_l1_weight_decay)
+    def get_l1_weight_decay(self, coeffs):
+        return 0
+
+
 
 class CompositeLayer(Layer):
     """
@@ -4099,6 +4532,37 @@ class CompositeLayer(Layer):
 
         self.output_space = CompositeSpace(tuple(layer.get_output_space()
                                                  for layer in self.layers))
+        
+    @wraps(Layer.get_layer_monitoring_channels)
+    def get_layer_monitoring_channels(self, state_below=None,
+                                        state=None, targets=None):
+        rval = OrderedDict()
+
+        if state is None: #TODO perharps wrong
+            state = [None for l in self.layers]
+        if targets is None:
+            targets = [None for l in self.layers]
+
+        for l in range(len(self.layers)):
+            layer = self.layers[l]
+            ch = layer.get_layer_monitoring_channels(
+                           state_below=state_below,
+                           state=state[l],
+                           targets=targets[l]
+                           )
+            if not isinstance(ch, OrderedDict):
+                raise TypeError(str((type(ch), layer.layer_name)))
+            for key in ch:
+                rval[key] = ch[key] #TODO better and for mlp
+        return rval
+            
+
+    @wraps(Layer.get_monitoring_data_specs)
+    def get_monitoring_data_specs(self):
+        space = CompositeSpace((self.get_input_space(),
+                                self.get_output_space()))
+        source = (self.get_input_source(), self.get_target_source())
+        return (space, source)
 
     @wraps(Layer.get_params)
     def get_params(self):
@@ -4110,6 +4574,62 @@ class CompositeLayer(Layer):
 
         return rval
 
+    @wraps(Layer.get_weight_decay)
+    def get_weight_decay(self, coeffs):
+        # check the case where coeffs is a scalar
+        if not hasattr(coeffs, '__iter__'):
+            coeffs = [coeffs]*len(self.layers)
+
+        layer_costs = [layer.get_weight_decay(coeff) \
+                    for layer, coeff in safe_izip(self.layers, coeffs)]
+
+        total_cost = reduce(lambda x, y: x + y, layer_costs)
+
+        return total_cost
+    
+    @wraps(Layer.get_l1_weight_decay)
+    def get_l1_weight_decay(self, coeffs):
+        # check the case where coeffs is a scalar
+        if not hasattr(coeffs, '__iter__'):
+            coeffs = [coeffs]*len(self.layers)
+
+        layer_costs = [layer.get_l1_weight_decay(coeff) \
+                    for layer, coeff in safe_izip(self.layers, coeffs)]
+
+        total_cost = reduce(lambda x, y: x + y, layer_costs)
+
+        return total_cost
+        
+    @wraps(Model.set_batch_size)
+    def set_batch_size(self, batch_size):
+        for layer in self.layers:
+            layer.set_batch_size(batch_size)
+        
+    @wraps(Layer.censor_updates)
+    def censor_updates(self, updates):
+        for layer in self.layers:
+            layer.censor_updates(updates)
+        
+    @wraps(Layer.get_lr_scalers)
+    def get_lr_scalers(self):
+        rval = OrderedDict()
+
+        params = self.get_params()
+
+        for layer in self.layers:
+            contrib = layer.get_lr_scalers()
+
+            assert isinstance(contrib, OrderedDict)
+            # No two layers can contend to scale a parameter
+            assert not any([key in rval for key in contrib])
+            # Don't try to scale anything that's not a parameter
+            assert all([key in params for key in contrib])
+
+            rval.update(contrib)
+        assert all([isinstance(val, float) for val in rval.values()])
+        return rval
+
+        
     @wraps(Layer.fprop)
     def fprop(self, state_below):
 
@@ -4129,6 +4649,32 @@ class CompositeLayer(Layer):
         for layer in self.layers:
             layer.set_mlp(mlp)
 
+    @wraps(Layer.dropout_fprop)
+    def dropout_fprop(self, state_below, default_input_include_prob=0.5,
+                      input_include_probs=None, default_input_scale=2.,
+                      input_scales=None, per_example=True, theano_rng=None):
+
+        if theano_rng is None:
+            theano_rng = MRG_RandomStreams(max(self.rng.randint(2 ** 15), 1))
+
+        state_below = tuple( 
+                  layer.dropout_fprop(
+                      state_below,
+                      default_input_include_prob=default_input_include_prob,
+                      input_include_probs=input_include_probs,
+                      default_input_scale=default_input_scale,
+                      input_scales=input_scales,
+                      per_example=per_example,
+                      theano_rng=theano_rng
+                  ) 
+                  for layer in self.layers
+                  )
+
+        return state_below
+
+    
+
+    
 
 class FlattenerLayer(Layer):
     """
@@ -4167,9 +4713,48 @@ class FlattenerLayer(Layer):
         total_dim = self.raw_layer.get_output_space().get_total_dimension()
         self.output_space = VectorSpace(total_dim)
 
+    @wraps(Layer.get_monitoring_channels)
+    def get_monitoring_channels(self, data):
+        return self.raw_layer.get_monitoring_channels(data)
+        
+    @wraps(Layer.get_layer_monitoring_channels)
+    def get_layer_monitoring_channels(self, state_below=None,
+                                        state=None, targets=None):
+        return self.raw_layer.get_layer_monitoring_channels(state_below=state_below,
+                                                            state=state, targets=targets)
+
+    @wraps(Layer.get_monitoring_data_specs)
+    def get_monitoring_data_specs(self):
+        return self.raw_layer.get_monitoring_data_specs()
+
     @wraps(Layer.get_params)
     def get_params(self):
         return self.raw_layer.get_params()
+        
+    @wraps(Layer.get_weights)
+    def get_weights(self):
+
+        return self.raw_layer.get_weights()
+    
+    @wraps(Layer.get_weight_decay)
+    def get_weight_decay(self, coeffs):
+        return self.raw_layer.get_weight_decay(coeffs)
+    
+    @wraps(Layer.get_l1_weight_decay)
+    def get_l1_weight_decay(self, coeffs):
+        return self.raw_layer.get_l1_weight_decay(coeffs)
+        
+    @wraps(Model.set_batch_size)
+    def set_batch_size(self, batch_size):
+        self.raw_layer.set_batch_size(batch_size)
+        
+    @wraps(Layer.censor_updates)
+    def censor_updates(self, updates):
+        self.raw_layer.censor_updates(updates)
+        
+    @wraps(Layer.get_lr_scalers)
+    def get_lr_scalers(self):
+        return self.raw_layer.get_lr_scalers()
 
     @wraps(Layer.fprop)
     def fprop(self, state_below):
@@ -4210,10 +4795,26 @@ class FlattenerLayer(Layer):
         super(FlattenerLayer, self).set_mlp(mlp)
         self.raw_layer.set_mlp(mlp)
 
-    @wraps(Layer.get_weights)
-    def get_weights(self):
+    @wraps(Layer.dropout_fprop)
+    def dropout_fprop(self, state_below, default_input_include_prob=0.5,
+                      input_include_probs=None, default_input_scale=2.,
+                      input_scales=None, per_example=True, theano_rng=None):
 
-        return self.raw_layer.get_weights()
+        if theano_rng is None:
+            theano_rng = MRG_RandomStreams(max(self.rng.randint(2 ** 15), 1))
+
+        raw = self.raw_layer.dropout_fprop(
+                      state_below,
+                      default_input_include_prob=default_input_include_prob,
+                      input_include_probs=input_include_probs,
+                      default_input_scale=default_input_scale,
+                      input_scales=input_scales,
+                      per_example=per_example,
+                      theano_rng=theano_rng
+                  )
+
+        return self.raw_layer.get_output_space().format_as(raw,
+                                                           self.output_space)
 
 
 class WindowLayer(Layer):
@@ -4247,6 +4848,14 @@ class WindowLayer(Layer):
         extracts = tuple(extracts)
 
         return state_below[extracts]
+
+    @wraps(Layer.get_weight_decay)
+    def get_weight_decay(self, coeffs):
+        return 0
+
+    @wraps(Layer.get_l1_weight_decay)
+    def get_l1_weight_decay(self, coeffs):
+        return 0
 
     @wraps(Layer.set_input_space)
     def set_input_space(self, space):
@@ -4284,6 +4893,126 @@ class WindowLayer(Layer):
     def get_monitoring_channels(self):
         return []
 
+class WindowChannelLayer(Layer):
+    """
+    Not for Merging
+    """
+
+    def __init__(self, layer_name, window):
+        super(WindowChannelLayer, self).__init__()
+        self.__dict__.update(locals())
+        del self.self
+        if window[0] < 0 or window[0] > window[1]:
+            raise ValueError("WindowChannelLayer: bad window parameter")
+
+    @wraps(Layer.fprop)
+    def fprop(self, state_below):
+        extracts = [slice(None), slice(None), slice(None), slice(None)]
+        extracts[self.channels] = slice(self.window[0], self.window[1])
+        extracts = tuple(extracts)
+
+        return state_below[extracts]
+
+    @wraps(Layer.get_weight_decay)
+    def get_weight_decay(self, coeffs):
+        return 0
+
+    @wraps(Layer.get_l1_weight_decay)
+    def get_l1_weight_decay(self, coeffs):
+        return 0
+
+    @wraps(Layer.set_input_space)
+    def set_input_space(self, space):
+        self.input_space = space
+
+        if not isinstance(space, Conv2DSpace):
+            raise TypeError("The input to a Window layer should be a "
+                            "Conv2DSpace,  but layer " + self.layer_name +
+                            " got " + str(type(self.input_space)))
+        axes = space.axes
+        self.channels = axes.index('c')
+
+        nrows = space.shape[0]
+        ncols = space.shape[1]
+
+        self.output_space = Conv2DSpace(
+                                shape=[nrows,ncols],
+                                num_channels=self.window[1]-self.window[0],
+                                axes=axes
+                                )
+
+    @wraps(Layer.get_params)
+    def get_params(self):
+        return []
+
+    @wraps(Layer.get_monitoring_channels)
+    def get_monitoring_channels(self):
+        return []
+
+class RescalerLayer(Layer):
+    """
+    Layer used to select a window of an image input.
+    The input of the layer must be Conv2DSpace.
+
+    Parameters
+    ----------
+    layer_name : str
+        A name for this layer.
+    window : tuple
+        A four-tuple of ints indicating respectively
+        the top left x and y position, and
+        the bottom right x and y position of the window.
+    """
+
+    def __init__(self, layer_name):
+        super(RescalerLayer, self).__init__()
+        self.__dict__.update(locals())
+        del self.self
+
+    @wraps(Layer.get_weight_decay)
+    def get_weight_decay(self, coeffs):
+        return 0
+
+    @wraps(Layer.get_l1_weight_decay)
+    def get_l1_weight_decay(self, coeffs):
+        return 0
+
+    @wraps(Layer.fprop)
+    def fprop(self, state_below):
+        M = T.max(state_below, axis=[self.batches,self.channels], keepdims=True)
+        m = T.min(state_below, axis=[self.batches,self.channels], keepdims=True)
+        r = (state_below - m) * (2. / (M - m + 1e-4)) - 1.
+#to test: r = T.switch(T.eq(m,M), 0, (state_below - m) * (2. / (M - m + 1e-4)) - 1.)
+#        r = T.clip( (state_below - m) * (2. / (M - m)) - 1. , -1. , 1.)
+#        M = T.max(state_below, axis=[self.batches,self.channels], keepdims=False)
+#        m = T.min(state_below, axis=[self.batches,self.channels], keepdims=False)
+#        r = (state_below - m[:, None, None, :]) * (2. / (-m[:, None, None, :] + M[:, None, None, :]  + 1e-4)) - 1.
+        return r
+
+    @wraps(Layer.set_input_space)
+    def set_input_space(self, space):
+        self.input_space = space
+
+        if not isinstance(space, Conv2DSpace):
+            raise TypeError("The input to a Window layer should be a "
+                            "Conv2DSpace,  but layer " + self.layer_name +
+                            " got " + str(type(self.input_space)))
+        axes = space.axes
+        self.batches = axes.index('b')
+        self.channels = axes.index('c')
+
+        nrows = space.shape[0]
+        ncols = space.shape[1]
+
+        self.output_space = space
+
+    @wraps(Layer.get_params)
+    def get_params(self):
+        return []
+
+    @wraps(Layer.get_monitoring_channels)
+    def get_monitoring_channels(self):
+        return []
 
 def apply_dropout(state, include_prob, scale, theano_rng,
                   input_space, mask_value=0, per_example=True):

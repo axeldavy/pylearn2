@@ -586,6 +586,8 @@ class Monitor(object):
         if isinstance(val, (float, int, long)):
             val = np.cast[theano.config.floatX](val)
 
+        if not( hasattr(self, 'theano_function_mode')):
+	     self.theano_function_mode = None
         val = T.as_tensor_variable(val)
 
         if data_specs is None:
@@ -635,7 +637,6 @@ class Monitor(object):
                                      "get_data_specs() method, or of a " +
                                      "model's get_monitoring_data_specs() " +
                                      "method.")
-
         mode = self.theano_function_mode
         if mode is not None and hasattr(mode, 'record'):
             mode.record.handle_line('Adding monitor channel '+name+'\n')
@@ -682,7 +683,7 @@ class Monitor(object):
         """
         for name in self.channels:
             channel = self.channels[name]
-            assert hasattr(channel, 'prereqs')
+         #   assert hasattr(channel, 'prereqs')
 
     @classmethod
     def get_monitor(cls, model):
@@ -699,7 +700,7 @@ class Monitor(object):
 
         if hasattr(model, 'monitor'):
             rval = model.monitor
-            rval._sanity_check()
+          #   rval._sanity_check()
         else:
             rval = Monitor(model)
             model.monitor = rval
