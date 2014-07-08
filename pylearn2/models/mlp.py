@@ -1592,11 +1592,12 @@ class MultiSoftmax(Layer):
             if state is None:
                 state = self.fprop(state_below)
 
-            mx = state.max(axis=1)
+            for i in xrange(self.n_outputs):
+                mx = state[i].max(axis=1)
 
-            rval.update(OrderedDict([('mean_max_class', mx.mean()),
-                                ('max_max_class', mx.max()),
-                                ('min_max_class', mx.min())]))
+                rval.update(OrderedDict([('mean_max_class'+'_'+str(i), mx.mean()),
+                                   ('max_max_class'+'_'+str(i), mx.max()),
+                                   ('min_max_class'+'_'+str(i), mx.min())]))
 
             if targets is not None:
                 for i in xrange(self.n_outputs):
@@ -4361,7 +4362,6 @@ class PretrainedLayerLearn(Layer):
 
     @wraps(Layer.set_input_space)
     def set_input_space(self, space):
-
         assert self.get_input_space() == space
 
     @wraps(Layer.get_params)
@@ -4395,10 +4395,11 @@ class PretrainedLayerLearn(Layer):
     @wraps(Layer.get_layer_monitoring_channels)
     def get_layer_monitoring_channels(self, state_below=None,
                                     state=None, targets=None):
-        r = self.layer_content.layers[-1].get_layer_monitoring_channels(state_below=state_below, state=state, targets=targets)
-        print r
-        return r
+#        r = self.layer_content.layers[-1].get_layer_monitoring_channels(state_below=state_below, state=state, targets=targets)
+#        print r
+#        return r
 #        return OrderedDict([])
+        return self.layer_content.get_layer_monitoring_channels(state_below=state_below,state=state,targets=targets)
 
     @wraps(Layer.fprop)
     def fprop(self, state_below):

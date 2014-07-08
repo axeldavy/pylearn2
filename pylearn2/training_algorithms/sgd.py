@@ -282,6 +282,12 @@ class SGD(TrainingAlgorithm):
 
         grads, updates = self.cost.get_gradients(model, nested_args,
                                                  ** fixed_var_descr.fixed_vars)
+        #import theano.printing as printing
+        #grads = [printing.Print('grads')(grads) for grad in grads]
+        #for k in grads:
+        #   grads[k] = printing.Print('grads_'+k)(grads[k])
+           
+         
         if not isinstance(grads, OrderedDict):
             raise TypeError(str(type(self.cost)) + ".get_gradients returned " +
                             "something with" + str(type(grads)) + "as its " +

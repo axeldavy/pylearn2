@@ -345,6 +345,7 @@ class Monitor(object):
         self._dirty = False
 
         # Recompute the data specs, since the channels may have changed.
+#        import pdb; pdb.set_trace()
         self._build_data_specs()
 
         init_names = dir(self)
