@@ -20,20 +20,33 @@ from pylearn2.utils import py_integer_types
 from pylearn2.utils import sharedX
 
 class MLPCRF(Model):
-    def __init__(self, mlp, crf_size, connections):
+    def __init__(self, mlp, output_size, connections):
         #TODO
         
     @wraps(Model.set_input_space)
-    def set_input_space(self, input_space):
-        #TODO
+    def set_input_space(self, space):
+        self.input_space = space
+        self.mlp.set_input_space(space)
         
     @wraps(Model.get_monitoring_channels)
     def get_monitoring_channels(self, data):
-        #TODO
+        X, Y = data
+        rval = self.mlp.get_layer_monitoring_channels(state_below=X)
+        #rval['CRF_misclass'] = ??? Y: truth values, X:inputs
+        #rval['CRF_Potentials_norm'] = ...
+        return rval
         
     @wraps(get_monitoring_data_specs)
     def get_monitoring_data_specs(self):
-        #TODO
+        """
+        Notes
+        -----
+        In this case, we want the inputs and targets.
+        """
+        space = CompositeSpace((self.get_input_space(),
+                                self.get_output_space()))
+        source = (self.get_input_source(), self.get_target_source())
+        return (space, source)
         
     @wraps(set_batch_size)
     def set_batch_size(self):
@@ -41,7 +54,7 @@ class MLPCRF(Model):
     
     @wraps(get_lr_scalers)
     def get_lr_scalers(self):
-        #TODO
+        return self.mlp.get_lr_scalers()
         
     @wraps(redo_theano)
     def redo_theano(self):
