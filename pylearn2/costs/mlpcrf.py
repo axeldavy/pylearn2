@@ -118,7 +118,7 @@ def ConstrastiveDivergence(Cost):
 
             WRITEME
         """
-        #TODO
+        return self.model.calculate_derivates_energy(Y).mean(axis=?)
 
     def _get_negative_phase(model, P_unaries, P_pairwise, Y):
         """

@@ -8,7 +8,7 @@ import numpy as np
 import warnings
 
 from theano.compat.python2x import OrderedDict
-from theano.sandbox import cuda
+from theano.sandbox.rng_mrg.MRG_RandomStreams import multinomial as theano_multinomial
 from theano import tensor as T
 
 from pylearn2.linear.matrixmul import MatrixMul
@@ -67,4 +67,10 @@ class MLPCRF(Model):
         #TODO
         
     def gibbs_sample_step(self, P_unaries, P_pairwise, current_output):
-        #TODO
+        def update_case(index, neighboors_indexes, current_output, P_unaries, P_pairwise):
+            sum_P_pairwise = theano.map(lambda batch_index, index, neigboors_indexes, current_output, P_pairwise: P_pairwise[batch_index, index, :, neigboors_indexes, current_output[batch_index, neigboors_indexes]].sum(axis=1), sequences=[theano.tensor.arange(current_output.shape[0])], non_sequences=[index, neigboors_indexes, current_output, P_pairwise])
+            P_for_labels = P_unaries[:, index, :] +  sum_P_pairwise
+            probabilities = P_for_labels / P_for_labels.sum(axis=1) # batch_size x num_labels
+            update_case = theano_multinomial(probabilities)
+            new_output = set_subtensor(current_output[index], update_case)
+        
