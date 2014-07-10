@@ -20,8 +20,37 @@ from pylearn2.utils import py_integer_types
 from pylearn2.utils import sharedX
 
 class MLPCRF(Model):
-    def __init__(self, mlp, output_size, connections, unaries_pool_shape):
-        #TODO
+    """
+    This model is a MLP followed by a CRF for the outputs.
+    For now, only 2D is supported. The MLP's output must be a
+    Conv2DSpace and match the shape expected by the CRF
+
+    Parameters
+    ----------
+    mlp : object of class MLP
+        The mlp below the CRF.
+    output_size : tuple
+        The shape of the 2D output grid of the CRF.
+    connections : list of list [TO CHANGE]
+        Describes the connections to other indexes
+    unaries_pool_shape : tuple
+        Tells when getting the unary features, which region of
+        the MLP outputs to take. For example if set to (3, 3),
+        the unary feature would be of length 3x3x(number of the
+        output of the MLP).
+    num_labels : integer
+        The number of labels of the outputs.
+    """
+    def __init__(self, mlp, output_size, connections, unaries_pool_shape, num_labels):
+        super(MLPCRF, self).__init__()
+
+        if not(isinstance(mlp, MLP)):
+            raise ValueError("MLPCRF expects an object of class MLP as input")
+        self.output_size = output_size
+        self.num_indexes = output_size[0] * output_size[1]
+        self.connections = connections ???
+        self.unaries_pool_shape = unaries_pool_shape ???
+        self.num_labels = num_labels
 
     @wraps(Model.set_input_space)
     def set_input_space(self, space):
@@ -84,6 +113,23 @@ class MLPCRF(Model):
     there are for every index, and use that.
     """
     def get_potentials(self, inputs):
+        """
+        Calculate the potentials given a batch of inputs
+
+        Parameters
+        ----------
+        inputs : member of self.input_space
+
+        Returns
+        -------
+        P_unaries : (num_batches, num_indexes, num_labels) tensor
+            The unary potentials of the CRF.
+        P_pairwise : (num_batches, num_indexes, num_labels, num_indexes, num_labels) tensor
+            The pairwise potentials of the CRF.
+            the fourth and fifth dim are for the neighboor of the point we consider
+            (according to the defined connections).
+            The content is undefined for indexes for non-neighboors
+        """
         self.input_space.validate(inputs)
 
         mlp_outputs_old_space = self.mlp.fprop(inputs)
@@ -148,6 +194,21 @@ class MLPCRF(Model):
 
     def calculate_derivates_energy(self, outputs):
         """
+        Calculate the derivatives of the energy given
+        the unary and pairwise potentials
+
+        Parameters
+        ----------
+        outputs : (num_batches, num_indexes) tensor
+
+        Returns
+        -------
+        derivative_unaries : (num_batches, num_indexes, num_labels) tensor
+            The derivative given theunary potentials of the CRF.
+        derivative_pairwise : (num_batches, num_indexes, num_labels, num_indexes, num_labels) tensor
+            The derivative given The pairwise potentials of the CRF.
+        """
+        """
         Inefficient I think.
         Fill the pairwise potentials derivatives.
         Does an equivalent of:
@@ -185,6 +246,21 @@ class MLPCRF(Model):
         return derivative_unaries, derivative_pairwise
 
     def gibbs_sample_step(self, P_unaries, P_pairwise, current_output):
+        """
+        Does one iteration of gibbs sampling.
+
+        Parameters
+        ----------
+        P_unaries : (num_batches, num_indexes, num_labels) tensor
+            The unary potentials of the CRF.
+        P_pairwise : (num_batches, num_indexes, num_labels, num_indexes, num_labels) tensor
+            The pairwise potentials of the CRF.
+        current_output : (num_batches, num_indexes) tensor
+
+        Returns
+        -------
+        new_output : (num_batches, num_indexes) tensor
+        """
         """
         Does one iteration of gibbs sampling.
         Does an equivalent of:
