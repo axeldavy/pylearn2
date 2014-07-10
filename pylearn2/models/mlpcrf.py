@@ -122,7 +122,7 @@ class MLPCRF(Model):
                 u2 = vectors for v across the batch
                 for li in labels:
                     for lv in labels:
-                        P_pairwise[b, i, li, v, lv] = scalar_product(W'[li, lv], |u1-u2|)
+                        P_pairwise[:, i, li, v, lv] = scalar_product(W'[li, lv], |u1-u2|)
         """
 
         def fill_pairwise_for_label_neighboor_i4(label_neighboor, P_pairwise_current, index, index_neighboor, label_index, feature_index, feature_neigboor, pairwise_vectors):
