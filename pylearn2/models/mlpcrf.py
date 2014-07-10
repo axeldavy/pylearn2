@@ -192,7 +192,7 @@ class MLPCRF(Model):
 
 
 
-    def calculate_derivates_energy(self, outputs):
+    def calculate_derivates_energy(self, outputs, d_unaries_to_update=None, d_pairwise_to_update=None):
         """
         Calculate the derivatives of the energy given
         the unary and pairwise potentials
@@ -208,6 +208,17 @@ class MLPCRF(Model):
         derivative_pairwise : (num_batches, num_indexes, num_labels, num_indexes, num_labels) tensor
             The derivative given The pairwise potentials of the CRF.
         """
+
+        if d_unaries_to_update is None:
+            derivative_unaries = theano.shared(numpy.zeros((self.batch_size, self.num_indexes, self.num_labels), config.floatX))
+        else:
+            derivative_unaries = d_unaries_to_update
+
+        if d_pairwise_to_update is None:
+            derivative_pairwise = theano.shared(numpy.zeros((self.batch_size, self.num_indexes, self.num_labels, self.num_indexes, self.num_labels), config.floatX))
+        else:
+            derivative_pairwise = d_pairwise_to_update
+
         """
         Inefficient I think.
         Fill the pairwise potentials derivatives.
@@ -217,31 +228,27 @@ class MLPCRF(Model):
                li = outputs[b, i]
                for v in neighboors(i):
                    lv = outputs[b, v]
-                   derivative[b, i, li, v, lv] = 1
+                   derivative[b, i, li, v, lv] += 1
         """
-        
         def fill_pairwise_derivative(index, neighboors_indexes, P_pairwise_d_current, outputs):
             def fill_pairwise_derivative_for_batch_index(batch_index_, P_pairwise_d_current_, index_, neighboors_indexes_, outputs_):
                 def fill_pairwise_derivative_for_neighboor(neighboor_index__, P_pairwise_d_current__, batch_index__, index__, label_index__, outputs__):
                     label_neighboor__ = outputs__[batch_index__, neighboor_index__]
-                    return set_subtensor(P_pairwise_d_current__[batch_index, index, label_index__, neighboor_index__, label_neighboor__], 1)
+                    return set_subtensor(P_pairwise_d_current__[batch_index, index, label_index__, neighboor_index__, label_neighboor__], P_pairwise_d_current__[batch_index, index, label_index__, neighboor_index__, label_neighboor__] + 1)
                 return theano.scan(fn=fill_pairwise_derivative_for_neighboor, sequences=[neighboors_indexes_], outputs_info=P_pairwise_d_current_, non_sequences=[batch_index_, index_, outputs_[batch_index_, index_], outputs_])[-1]
             return theano.scan(fn=fill_pairwise_derivative_for_batch_index, sequences=[theano.tensor.arange(outputs.shape[0])], outputs_info=[P_pairwise_d_current], non_sequences=[index, neigboors_indexes, outputs])[-1]
 
-        derivative_pairwise = T.TensorType(config.floatX , (False,)*5)()#theano.shared(numpy.zeros(self.P_pairwise_size, config.floatX))
-        derivative_pairwise = T.specify_shape(derivative_pairwise, (self.batch_size, self.num_indexes, self.num_labels, self.num_indexes, self.num_labels))
         derivative_pairwise = theano.scan(fn=fill_pairwise_derivative, sequences=[theano.tensor.arange(outputs.shape[1])], outputs_info=[derivative_pairwise], non_sequences=[neigboors_indexes, outputs], n_steps=self.num_indexes)[-1]
 
         """
         Fill the unary potentials derivatives.
         Does an equivalent of:
         for b in batches:
-            derivative[b, :, outputs[b, :]] = 1
+            derivative[b, :, outputs[b, :]] += 1
         """
 
-        derivative_unaries = T.TensorType(config.floatX , (False,)*3)()#theano.shared(numpy.zeros(self.P_unaries_size, config.floatX))
-        derivative_unaries = T.specify_shape(derivative_unaries, (self.batch_size, self.num_indexes, self.num_labels))
-        derivative_unaries = theano.scan(fn=lambda batch_index, derivative_unaries_current, outputs: set_subtensor(derivative_unaries_current[batch_index, :, outputs[batch_index, :]], 1),
+        
+        derivative_unaries = theano.scan(fn=lambda batch_index, derivative_unaries_current, outputs: set_subtensor(derivative_unaries_current[batch_index, :, outputs[batch_index, :]], derivative_unaries_current[batch_index, :, outputs[batch_index, :]] + 1),
                                          sequences=[theano.tensor.arange(outputs.shape[0])], outputs_info=derivative_unaries, non_sequences=[outputs])[-1]
         return derivative_unaries, derivative_pairwise
 
@@ -271,9 +278,9 @@ class MLPCRF(Model):
         """
         def update_case(index, neighboors_indexes, current_output, P_unaries, P_pairwise):
             sum_P_pairwise = theano.map(fn=lambda batch_index, index, neigboors_indexes, current_output, P_pairwise: P_pairwise[batch_index, index, :, neigboors_indexes, current_output[batch_index, neigboors_indexes]].sum(axis=1), sequences=[theano.tensor.arange(current_output.shape[0])], non_sequences=[index, neigboors_indexes, current_output, P_pairwise])
-            P_for_labels = T.exp(T.neg(P_unaries[:, index, :] +  sum_P_pairwise)) # verifier exp ok
-            probabilities = P_for_labels / P_for_labels.sum(axis=1) # batch_size x num_labels
-            update_case = theano_multinomial(probabilities)
+            P_for_labels = T.exp(T.neg(P_unaries[:, index, :] +  sum_P_pairwise))
+            probabilities = P_for_labels / P_for_labels.sum(axis=1) # num_batches x num_labels
+            update_case = theano_multinomial(probabilities) # num_batches
             new_output = set_subtensor(current_output[index], update_case)
             return new_output
         Outputs = theano.scan(fn=update_case, sequences=[theano.tensor.arange(current_output.shape[1]), self.connections], outputs_info=[current_output], non_sequences=[P_unaries, P_pairwise], n_steps=self.num_indexes)
