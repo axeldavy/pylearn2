@@ -392,7 +392,7 @@ class RBM(Block, Model):
             The number of elements in the input, if the input is a vector.
         """
         if not isinstance(self.vis_space, VectorSpace):
-            raise TypeError("Can't describe " + str(type(self.vis_space))
+            raise TypeError("Can't despos_vcribe " + str(type(self.vis_space))
                     + " as a dimensionality number.")
 
         return self.vis_space.dim

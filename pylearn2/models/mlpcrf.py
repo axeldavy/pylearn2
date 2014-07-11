@@ -158,7 +158,7 @@ class MLPCRF(Model):
             mlp_outputs_seen = mlp_outputs[:, ???, ???, :].reshape(mlp_outputs.shape[0], -1)
             return theano.scan(fn=compute_scalar_for_label, sequences=[T.arange(self.num_labels)], outputs_info=[P_unaries_current], non_sequences=[index, mlp_outputs_seen, unaries_vectors_])[-1]
         P_unaries = theano.scan(fn=fill_unaries_for_index, sequences=[??, T.arange(self.num_indexes)], outputs_info=[P_unaries], non_sequences=[mlp_outputs_new_space, self.unaries_vectors])[-1]
-
+        
         """
         Fill the pairwise potentials.
         Does an equivalent of:
@@ -285,3 +285,53 @@ class MLPCRF(Model):
             return new_output
         Outputs = theano.scan(fn=update_case, sequences=[theano.tensor.arange(current_output.shape[1]), self.connections], outputs_info=[current_output], non_sequences=[P_unaries, P_pairwise], n_steps=self.num_indexes)
         return Outputs[-1]
+
+class CRFNeighbourhood():
+
+    def __init__(self, lattice_size, neighbourhood_shape):
+        """
+        TODO : computes self.list_neighbours with the shape of the lattice and the shape of the neighbourhood_shape
+                neighbourhood_shape is a list of tuples.
+                For example, (-5, -5) which correspond to the relative coordinate of the 
+        """
+        lattice_size
+        neighbourhoods_dict = dict()
+        for y_current in range(lattice_size[0]):
+            for x_current in range(lattice_size[1]):
+                current_neighbourhood = []
+                for current_neighbour in neighbourhood_shape:
+                    validate_neighbour = True
+
+                    if (x_current + current_neighbour[0]) < 0:
+                        validate_neighbour = False
+                    if (x_current + current_neighbour[0]) >= lattice_size[0]:
+                        validate_neighbour = False
+
+                    if (y_current + current_neighbour[1]) < 0:
+                        validate_neighbour = False
+                    if (y_current + current_neighbour[1]) >= lattice_size[1]:
+                        validate_neighbour = False
+
+                    if validate_neighbour:
+                        current_neighbourhood.append((y_current+current_neighbour[1])*lattice_size[1] + x_current+current_neighbour[0])
+
+                neighbourhoods_dict[y_current*lattice_size[1] + x_current] = current_neighbourhood
+        self.neighbours_to_theano_tensor(lattice_size, neighbourhoods_dict)
+
+    def neighbours_to_theano_tensor(self, lattice_size, neighbourhoods_dict):
+        """
+        TODO : return two theano tensors from self.list_neighbours :
+                    1) 2D matrix of size n_indexes * max_size_neighbours (0 padding)
+                    2) Vector of size n_indexes which correspond to the size of the neighbourhood for each index
+        """
+        lattice_length = lattice_size[0]*lattice_size[1]
+        self.neighbourhoods_sizes = np.zeros((lattice_length)).astype(int)
+        for current_node in range(lattice_length):
+            self.neighbourhoods_sizes[current_node] = len(neighbourhoods_dict[current_node])
+
+        self.neighbourhoods = np.zeros((lattice_length, np.max(self.neighbourhoods_sizes))).astype(int)
+        for current_node in range(lattice_length):
+            self.neighbourhoods[current_node, 0:self.neighbourhoods_sizes[current_node]] = neighbourhoods_dict[current_node]
+
+        self.neighbourhoods_sizes = theano.shared(self.neighbourhoods_sizes)
+        self.neighbourhoods = theano.shared(self.neighbourhoods)
