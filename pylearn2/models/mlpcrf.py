@@ -145,17 +145,13 @@ class MLPCRF(Model):
         Does an equivalent of:
         for i in indexes:
             u = vectors of outputs seen by the CRF node from the MLP across the batch
-            for l in labels:
-                P_unaries[:, i, l] = u * W[l]
+            P_unaries[:, i, :] = u * W^T
         
         """
 
-        def fill_unaries_for_index(???, index, P_unaries_current, mlp_outputs, unaries_vectors):
-            def compute_scalar_for_label(label, P_unaries_current_, index_, mlp_outputs_seen_, unaries_vectors_):
-                return set_subtensor(P_unaries_current_[:, index_, label], T.dot(mlp_outputs_seen_, unaries_vectors_[label, :]))
-            
+        def fill_unaries_for_index(???, index, P_unaries_current, mlp_outputs, unaries_vectors):            
             mlp_outputs_seen = mlp_outputs[:, ???, ???, :].reshape(mlp_outputs.shape[0], -1)
-            return theano.scan(fn=compute_scalar_for_label, sequences=[T.arange(self.num_labels)], outputs_info=[P_unaries_current], non_sequences=[index, mlp_outputs_seen, unaries_vectors_])[-1]
+            return set_subtensor(P_unaries_current[:, index, :], T.dot(mlp_outputs_seen, unaries_vectors.T))
         P_unaries = theano.scan(fn=fill_unaries_for_index, sequences=[??, T.arange(self.num_indexes)], outputs_info=[P_unaries], non_sequences=[mlp_outputs_new_space, self.unaries_vectors])[-1]
 
         """
