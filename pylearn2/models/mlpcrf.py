@@ -97,8 +97,8 @@ class CRFNeighborhood():
         for current_node in range(lattice_length):
             self.neighborhoods[current_node, 0:self.neighborhoods_sizes[current_node]] = neighborhoods_dict[current_node]
 
-        self.neighborhoods_sizes = theano.shared(self.neighborhoods_sizes)
-        self.neighborhoods = theano.shared(self.neighborhoods)
+        self.neighborhoods_sizes = sharedX(self.neighborhoods_sizes)
+        self.neighborhoods = sharedX(self.neighborhoods)
         
 class MLPCRF(Model):
     """
@@ -330,12 +330,12 @@ class MLPCRF(Model):
         """
 
         if d_unaries_to_update is None:
-            derivative_unaries = theano.shared(numpy.zeros((self.batch_size, self.num_indexes, self.num_labels), config.floatX))
+            derivative_unaries = sharedX(numpy.zeros((self.batch_size, self.num_indexes, self.num_labels), config.floatX))
         else:
             derivative_unaries = d_unaries_to_update
 
         if d_pairwise_to_update is None:
-            derivative_pairwise = theano.shared(numpy.zeros((self.batch_size, self.num_indexes, self.num_labels, self.num_indexes, self.num_labels), config.floatX))
+            derivative_pairwise = sharedX(numpy.zeros((self.batch_size, self.num_indexes, self.num_labels, self.num_indexes, self.num_labels), config.floatX))
         else:
             derivative_pairwise = d_pairwise_to_update
 
