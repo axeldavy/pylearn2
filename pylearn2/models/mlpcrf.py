@@ -19,6 +19,87 @@ from pylearn2.space import VectorSpace
 from pylearn2.utils import py_integer_types
 from pylearn2.utils import sharedX
 
+class CRFNeighbourhood():
+    """
+    Implements the definition of a neighbourhood for a CRF.
+    A CRFNeighbourhood is initialized according to the size
+    of a rectangular lattice and a tuple of tuples which indicate
+    the relative position of the neighbours of the current_node.
+
+
+    Parameters
+    ----------
+    neighboors : a 2D matrix (theano tensor). Each raw i contains
+        the neighbours of the node i, plus eventually some meaningless 0.
+    neighbours_sizes : a vector which contains the sizes of the neighbourhood
+        for each node in the graph. Using it help to stop before the
+        meaningless 0 of neighbours. 
+    """
+
+    def __init__(self, lattice_size, neighbourhood_shape):
+        """
+        Creates an instance of the class given the size of a rectangular lattice
+        and a neighbourhood shape. The nodes are indexed from left to right and
+        from top to bottom.
+
+        Parameters
+        ----------
+        lattice_size : a 2D vector which contains the size of the lattice.
+            The first elements is the number of raws in the lattice, the second
+            is for the columns.
+        neighbourhood_shape : a tuple of tuple of relative neighbours.
+            A neighbour is define by a tuple (x, y) which corresponds to
+            the relative position of the neighbour of a given node.
+        """
+        neighbourhoods_dict = dict()
+        # Iterate over the lattice
+        for y_current in range(lattice_size[0]):
+            for x_current in range(lattice_size[1]):
+                # Creates a list of neighbours if they are in the lattice
+                current_neighbourhood = []
+                for current_neighbour in neighbourhood_shape:
+                    validate_neighbour = True
+
+                    if (x_current + current_neighbour[0]) < 0:
+                        validate_neighbour = False
+                    if (x_current + current_neighbour[0]) >= lattice_size[0]:
+                        validate_neighbour = False
+
+                    if (y_current + current_neighbour[1]) < 0:
+                        validate_neighbour = False
+                    if (y_current + current_neighbour[1]) >= lattice_size[1]:
+                        validate_neighbour = False
+
+                    if validate_neighbour:
+                        current_neighbourhood.append((y_current+current_neighbour[1])*lattice_size[1] + x_current+current_neighbour[0])
+
+                neighbourhoods_dict[y_current*lattice_size[1] + x_current] = current_neighbourhood
+        # Changes the type of the dictionnary into theano tensors
+        self.neighbours_to_theano_tensor(lattice_size, neighbourhoods_dict)
+
+    def neighbours_to_theano_tensor(self, lattice_size, neighbourhoods_dict):
+        """
+        Creates two theano tensors which will contain the neighbourhoods
+        and the sizes of these neighbourhoods.
+
+        Parameters
+        ----------
+        lattice_size : 2D vector which contains the size of the lattice.
+        neighbourhoods_dict : A python dictionnaire which contains the
+            indexes of the neighbours of the nodes in the graph.
+        """
+        lattice_length = lattice_size[0]*lattice_size[1]
+        self.neighbourhoods_sizes = np.zeros((lattice_length)).astype(int)
+        for current_node in range(lattice_length):
+            self.neighbourhoods_sizes[current_node] = len(neighbourhoods_dict[current_node])
+
+        self.neighbourhoods = np.zeros((lattice_length, np.max(self.neighbourhoods_sizes))).astype(int)
+        for current_node in range(lattice_length):
+            self.neighbourhoods[current_node, 0:self.neighbourhoods_sizes[current_node]] = neighbourhoods_dict[current_node]
+
+        self.neighbourhoods_sizes = theano.shared(self.neighbourhoods_sizes)
+        self.neighbourhoods = theano.shared(self.neighbourhoods)
+        
 class MLPCRF(Model):
     """
     This model is a MLP followed by a CRF for the outputs.
@@ -31,7 +112,7 @@ class MLPCRF(Model):
         The mlp below the CRF.
     output_size : tuple
         The shape of the 2D output grid of the CRF.
-    connections : list of list [TO CHANGE]
+    connections : CRFNeighbourhood object
         Describes the connections to other indexes
     unaries_pool_shape : tuple
         Tells when getting the unary features, which region of
@@ -46,9 +127,11 @@ class MLPCRF(Model):
 
         if not(isinstance(mlp, MLP)):
             raise ValueError("MLPCRF expects an object of class MLP as input")
+        if not (isinstance(connections, CRFNeighbourhood)):
+            raise ValueError("MLPCRF expects an object of class CRFNeighbourhood as input")
         self.output_size = output_size
         self.num_indexes = output_size[0] * output_size[1]
-        self.connections = connections ???
+        self.connections = connections
         self.unaries_pool_shape = unaries_pool_shape ???
         self.num_labels = num_labels
 
@@ -336,84 +419,3 @@ class MLPCRF(Model):
             return new_output
         scan_outputs, scan_updates = theano.scan(fn=update_case, sequences=[theano.tensor.arange(self.num_indexes), self.connections], outputs_info=[current_output], non_sequences=[P_unaries, P_pairwise], n_steps=self.num_indexes)
         return scan_outputs[-1], scan_updates
-
-class CRFNeighbourhood():
-    """
-    Implements the definition of a neighbourhood for a CRF.
-    A CRFNeighbourhood is initialized according to the size
-    of a rectangular lattice and a tuple of tuples which indicate
-    the relative position of the neighbours of the current_node.
-
-
-    Parameters
-    ----------
-    neighboors : a 2D matrix (theano tensor). Each raw i contains
-        the neighbours of the node i, plus eventually some meaningless 0.
-    neighbours_sizes : a vector which contains the sizes of the neighbourhood
-        for each node in the graph. Using it help to stop before the
-        meaningless 0 of neighbours. 
-    """
-
-    def __init__(self, lattice_size, neighbourhood_shape):
-        """
-        Creates an instance of the class given the size of a rectangular lattice
-        and a neighbourhood shape. The nodes are indexed from left to right and
-        from top to bottom.
-
-        Parameters
-        ----------
-        lattice_size : a 2D vector which contains the size of the lattice.
-            The first elements is the number of raws in the lattice, the second
-            is for the columns.
-        neighbourhood_shape : a tuple of tuple of relative neighbours.
-            A neighbour is define by a tuple (x, y) which corresponds to
-            the relative position of the neighbour of a given node.
-        """
-        neighbourhoods_dict = dict()
-        # Iterate over the lattice
-        for y_current in range(lattice_size[0]):
-            for x_current in range(lattice_size[1]):
-                # Creates a list of neighbours if they are in the lattice
-                current_neighbourhood = []
-                for current_neighbour in neighbourhood_shape:
-                    validate_neighbour = True
-
-                    if (x_current + current_neighbour[0]) < 0:
-                        validate_neighbour = False
-                    if (x_current + current_neighbour[0]) >= lattice_size[0]:
-                        validate_neighbour = False
-
-                    if (y_current + current_neighbour[1]) < 0:
-                        validate_neighbour = False
-                    if (y_current + current_neighbour[1]) >= lattice_size[1]:
-                        validate_neighbour = False
-
-                    if validate_neighbour:
-                        current_neighbourhood.append((y_current+current_neighbour[1])*lattice_size[1] + x_current+current_neighbour[0])
-
-                neighbourhoods_dict[y_current*lattice_size[1] + x_current] = current_neighbourhood
-        # Changes the type of the dictionnary into theano tensors
-        self.neighbours_to_theano_tensor(lattice_size, neighbourhoods_dict)
-
-    def neighbours_to_theano_tensor(self, lattice_size, neighbourhoods_dict):
-        """
-        Creates two theano tensors which will contain the neighbourhoods
-        and the sizes of these neighbourhoods.
-
-        Parameters
-        ----------
-        lattice_size : 2D vector which contains the size of the lattice.
-        neighbourhoods_dict : A python dictionnaire which contains the
-            indexes of the neighbours of the nodes in the graph.
-        """
-        lattice_length = lattice_size[0]*lattice_size[1]
-        self.neighbourhoods_sizes = np.zeros((lattice_length)).astype(int)
-        for current_node in range(lattice_length):
-            self.neighbourhoods_sizes[current_node] = len(neighbourhoods_dict[current_node])
-
-        self.neighbourhoods = np.zeros((lattice_length, np.max(self.neighbourhoods_sizes))).astype(int)
-        for current_node in range(lattice_length):
-            self.neighbourhoods[current_node, 0:self.neighbourhoods_sizes[current_node]] = neighbourhoods_dict[current_node]
-
-        self.neighbourhoods_sizes = theano.shared(self.neighbourhoods_sizes)
-        self.neighbourhoods = theano.shared(self.neighbourhoods)
