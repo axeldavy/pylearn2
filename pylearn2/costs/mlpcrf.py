@@ -92,29 +92,31 @@ def ConstrastiveDivergence(Cost):
 
         P_unaries, P_pairwise = model.get_potentials(X)
 
-        d_unaries_pos, d_pairwise_pos = self._get_positive_phase(model, Y)
+        pos_phase_energy, pos_updates = self._get_positive_phase(model, P_unaries, P_pairwise, Y)
 
-        d_unaries_neg, d_pairwise_neg = self._get_negative_phase(model, P_unaries, P_pairwise, Y)
+        neg_phase_energy, neg_updates = self._get_negative_phase(model, P_unaries, P_pairwise, Y)
 
-        d_unaries_estimate = d_unaries_pos + d_unaries_neg
-        d_pairwise_estimate = d_pairwise_pos + d_pairwise_neg
+        energy = pos_phase_energy + neg_phase_energy
 
         updates = OrderedDict()
-        updates[d_unaries] = d_unaries_estimate
-        updates[d_pairwise] = d_pairwise_estimate
+        for key, val in pos_updates.items():
+            updates[key] = val
+        for key, val in neg_updates.items():
+            updates[key] = val
 
         gradients = OrderedDict()
-        gradients = model.propagate_gradient(gradients, d_unaries, d_pairwise)
+        
+        # TODO: the cost is the energy. propagate the gradient though the network, and do like for dbm to make the sampling ok
 
         return gradients, updates
 
-    def _get_positive_phase(model, Y):
+    def _get_positive_phase(model, P_unaries, P_pairwise, Y):
         """
         .. todo::
 
             WRITEME
         """
-        return self.model.calculate_derivates_energy(Y).mean(axis=?)
+        return self.model.calculate_energy(P_unaries, P_pairwise, Y)
 
     def _get_negative_phase(model, P_unaries, P_pairwise, Y):
         """
