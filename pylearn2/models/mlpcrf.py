@@ -146,8 +146,7 @@ class MLPCRF(Model):
         for i in indexes:
             u = vectors of outputs seen by the CRF node from the MLP across the batch
             for l in labels:
-                for b in batch:
-                    P_unaries[b, i, l] = scalar_product(W[l], u[b])
+                P_unaries[:, i, l] = W[l] * u^T
         
         """
 
@@ -168,7 +167,7 @@ class MLPCRF(Model):
                 u2 = vectors for v across the batch
                 for li in labels:
                     for lv in labels:
-                        P_pairwise[:, i, li, v, lv] = scalar_product(W'[li, lv], |u1-u2|)
+                        P_pairwise[:, i, li, v, lv] = W'[li, lv] * |u1-u2|^T
         """
 
         def fill_pairwise_for_label_neighboor_i4(label_neighboor, P_pairwise_current, index, index_neighboor, label_index, feature_index, feature_neigboor, pairwise_vectors):
