@@ -234,7 +234,7 @@ class MLPCRF(Model):
             def fill_pairwise_derivative_for_batch_index(batch_index_, P_pairwise_d_current_, index_, neighboors_indexes_, outputs_):
                 def fill_pairwise_derivative_for_neighboor(neighboor_index__, P_pairwise_d_current__, batch_index__, index__, label_index__, outputs__):
                     label_neighboor__ = outputs__[batch_index__, neighboor_index__]
-                    return set_subtensor(P_pairwise_d_current__[batch_index, index, label_index__, neighboor_index__, label_neighboor__], P_pairwise_d_current__[batch_index, index, label_index__, neighboor_index__, label_neighboor__] + 1)
+                    return inc_subtensor(P_pairwise_d_current__[batch_index, index, label_index__, neighboor_index__, label_neighboor__], 1)
                 return theano.scan(fn=fill_pairwise_derivative_for_neighboor, sequences=[neighboors_indexes_], outputs_info=P_pairwise_d_current_, non_sequences=[batch_index_, index_, outputs_[batch_index_, index_], outputs_])[-1]
             return theano.scan(fn=fill_pairwise_derivative_for_batch_index, sequences=[theano.tensor.arange(outputs.shape[0])], outputs_info=[P_pairwise_d_current], non_sequences=[index, neigboors_indexes, outputs])[-1]
 
@@ -248,7 +248,7 @@ class MLPCRF(Model):
         """
 
         
-        derivative_unaries = theano.scan(fn=lambda batch_index, derivative_unaries_current, outputs: set_subtensor(derivative_unaries_current[batch_index, :, outputs[batch_index, :]], derivative_unaries_current[batch_index, :, outputs[batch_index, :]] + 1),
+        derivative_unaries = theano.scan(fn=lambda batch_index, derivative_unaries_current, outputs: inc_subtensor(derivative_unaries_current[batch_index, :, outputs[batch_index, :]], 1),
                                          sequences=[theano.tensor.arange(outputs.shape[0])], outputs_info=derivative_unaries, non_sequences=[outputs])[-1]
         return derivative_unaries, derivative_pairwise
 
