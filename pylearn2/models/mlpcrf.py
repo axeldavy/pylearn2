@@ -112,11 +112,8 @@ class MLPCRF(Model):
         The mlp below the CRF.
     output_size : tuple
         The shape of the 2D output grid of the CRF.
-    neighbors : 2D matrix
-        Contains on each raw the neighbors of a given node.
-    neighborhoods_sizes : 1D matrix
-        Contains the size of the neighborhood of a given node.
-        Aims at avoiding the meaningless 0 in neighbors.
+    crf_neighborhood : CRFNeighborhood object
+        Describes connections to other indexes
     unaries_pool_shape : tuple
         Tells when getting the unary features, which region of
         the MLP outputs to take. For example if set to (3, 3),
