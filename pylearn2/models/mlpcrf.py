@@ -415,7 +415,7 @@ class MLPCRF(Model):
                 sum_P_pairwise_for_i[b] = P_pairwise[b, i, :, list_of_neighbors, outputs[list_of_neighbors]].sum(axis=1)
         """
         def update_case(index, neighbors_indexes, neighborhoods_size, current_output, P_unaries, P_pairwise):
-            sum_P_pairwise = theano.map(fn=lambda batch_index, index, neigboors_indexes, neighborhoods_size, current_output, P_pairwise: P_pairwise[batch_index, index, :, neigboors_indexes[:neighborhoods_size], current_output[batch_index, neigboors_indexes[:neighborhoods_size]]].sum(axis=1), sequences=[theano.tensor.arange(current_output.shape[0])], non_sequences=[index, neigboors_indexes, neighborhoods_size, current_output, P_pairwise])
+            sum_P_pairwise = theano.map(fn=lambda batch_index, index, neigboors_indexes, current_output, P_pairwise: P_pairwise[batch_index, index, :, neigboors_indexes, current_output[batch_index, neigboors_indexes]].sum(axis=1), sequences=[theano.tensor.arange(current_output.shape[0])], non_sequences=[index, neigboors_indexes[:neighborhoods_size], current_output, P_pairwise])
             P_for_labels = T.exp(T.neg(P_unaries[:, index, :] +  sum_P_pairwise))
             probabilities = P_for_labels / P_for_labels.sum(axis=1) # num_batches x num_labels
             update_case = theano_multinomial(probabilities) # num_batches
