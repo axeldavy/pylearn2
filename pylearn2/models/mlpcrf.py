@@ -189,18 +189,6 @@ class MLPCRF(Model):
     def get_lr_scalers(self):
         return self.mlp.get_lr_scalers()
 
-
-    """
-    Current Big problem about the implementation:
-    conceptually we want the connections with the neighbors
-    to be a list of list. However this doesn't exist in Theano,
-    and you have to have a matrix.
-    I do not handle that right.
-    One idea was that additional cases should point to an added case
-    of every tensor with one axis beeing indexes, but that seems very bad.
-    But now I think we should introduce a Vector telling how many neighbors
-    there are for every index, and use that.
-    """
     def get_potentials(self, inputs):
         """
         Calculate the potentials given a batch of inputs
