@@ -256,7 +256,7 @@ class MLPCRF(Model):
         P_unaries : (num_batches, num_indexes, num_labels) tensor
             The unary potentials of the CRF.
         P_pairwise : (num_batches, num_indexes, num_labels, num_indexes, num_labels) tensor
-            The pairwise potentials of the CRF.
+            The pairwise potemortntials of the CRF.
         current_output : (num_batches, num_indexes) tensor
 
         Returns
@@ -282,17 +282,42 @@ class MLPCRF(Model):
         return Outputs[-1]
 
 class CRFNeighbourhood():
+    """
+    Implements the definition of a neighbourhood for a CRF.
+    A CRFNeighbourhood is initialized according to the size
+    of a rectangular lattice and a tuple of tuples which indicate
+    the relative position of the neighbours of the current_node.
+
+
+    Parameters
+    ----------
+    neighboors : a 2D matrix (theano tensor). Each raw i contains
+        the neighbours of the node i, plus eventually some meaningless 0.
+    neighbours_sizes : a vector which contains the sizes of the neighbourhood
+        for each node in the graph. Using it help to stop before the
+        meaningless 0 of neighbours. 
+    """
 
     def __init__(self, lattice_size, neighbourhood_shape):
         """
-        TODO : computes self.list_neighbours with the shape of the lattice and the shape of the neighbourhood_shape
-                neighbourhood_shape is a list of tuples.
-                For example, (-5, -5) which correspond to the relative coordinate of the 
+        Creates an instance of the class given the size of a rectangular lattice
+        and a neighbourhood shape. The nodes are indexed from left to right and
+        from top to bottom.
+
+        Parameters
+        ----------
+        lattice_size : a 2D vector which contains the size of the lattice.
+            The first elements is the number of raws in the lattice, the second
+            is for the columns.
+        neighbourhood_shape : a tuple of tuple of relative neighbours.
+            A neighbour is define by a tuple (x, y) which corresponds to
+            the relative position of the neighbour of a given node.
         """
-        lattice_size
         neighbourhoods_dict = dict()
+        # Iterate over the lattice
         for y_current in range(lattice_size[0]):
             for x_current in range(lattice_size[1]):
+                # Creates a list of neighbours if they are in the lattice
                 current_neighbourhood = []
                 for current_neighbour in neighbourhood_shape:
                     validate_neighbour = True
@@ -311,13 +336,19 @@ class CRFNeighbourhood():
                         current_neighbourhood.append((y_current+current_neighbour[1])*lattice_size[1] + x_current+current_neighbour[0])
 
                 neighbourhoods_dict[y_current*lattice_size[1] + x_current] = current_neighbourhood
+        # Changes the type of the dictionnary into theano tensors
         self.neighbours_to_theano_tensor(lattice_size, neighbourhoods_dict)
 
     def neighbours_to_theano_tensor(self, lattice_size, neighbourhoods_dict):
         """
-        TODO : return two theano tensors from self.list_neighbours :
-                    1) 2D matrix of size n_indexes * max_size_neighbours (0 padding)
-                    2) Vector of size n_indexes which correspond to the size of the neighbourhood for each index
+        Creates two theano tensors which will contain the neighbourhoods
+        and the sizes of these neighbourhoods.
+
+        Parameters
+        ----------
+        lattice_size : 2D vector which contains the size of the lattice.
+        neighbourhoods_dict : A python dictionnaire which contains the
+            indexes of the neighbours of the nodes in the graph.
         """
         lattice_length = lattice_size[0]*lattice_size[1]
         self.neighbourhoods_sizes = np.zeros((lattice_length)).astype(int)
