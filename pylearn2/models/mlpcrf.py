@@ -92,6 +92,10 @@ class MLPCRF(Model):
         source = (self.get_input_source(), self.get_target_source())
         return (space, source)
 
+    @wraps(Layer.get_params)
+    def get_params(self):
+        #TODO
+
     @wraps(set_batch_size)
     def set_batch_size(self, batch_size):
         self.mlp.set_batch_size(batch_size)
@@ -100,6 +104,7 @@ class MLPCRF(Model):
     @wraps(get_lr_scalers)
     def get_lr_scalers(self):
         return self.mlp.get_lr_scalers()
+
 
     """
     Current Big problem about the implementation:
@@ -129,6 +134,7 @@ class MLPCRF(Model):
             the fourth and fifth dim are for the neighboor of the point we consider
             (according to the defined connections).
             The content is undefined for indexes for non-neighboors
+        updates : subclass of dictionary specifying the update rules for all shared variables
         """
         self.input_space.validate(inputs)
 
@@ -145,14 +151,15 @@ class MLPCRF(Model):
         Does an equivalent of:
         for i in indexes:
             u = vectors of outputs seen by the CRF node from the MLP across the batch
-            P_unaries[:, i, :] = u * W^T
+            P_unaries[:, i, :] = u * W^T # W: label x num_channels
         
         """
 
         def fill_unaries_for_index(???, index, P_unaries_current, mlp_outputs, unaries_vectors):            
             mlp_outputs_seen = mlp_outputs[:, ???, ???, :].reshape(mlp_outputs.shape[0], -1)
             return set_subtensor(P_unaries_current[:, index, :], T.dot(mlp_outputs_seen, unaries_vectors.T))
-        P_unaries = theano.scan(fn=fill_unaries_for_index, sequences=[??, T.arange(self.num_indexes)], outputs_info=[P_unaries], non_sequences=[mlp_outputs_new_space, self.unaries_vectors])[-1]
+        scan_outputs, scan_updates_unaries = theano.scan(fn=fill_unaries_for_index, sequences=[??, T.arange(self.num_indexes)], outputs_info=[P_unaries], non_sequences=[mlp_outputs_new_space, self.unaries_vectors])
+        P_unaries = scan_outputs[-1]
 
         """
         Fill the pairwise potentials.
@@ -163,7 +170,7 @@ class MLPCRF(Model):
                 u2 = vectors for v across the batch
                 for li in labels:
                     for lv in labels:
-                        P_pairwise[:, i, li, v, lv] = |u1-u2| * W'[li, lv]
+                        P_pairwise[:, i, li, v, lv] = |u1-u2| * W'[li, lv] # to optimise with tensordot
         """
 
         def fill_pairwise_for_label_neighboor_i4(label_neighboor, P_pairwise_current, index, index_neighboor, label_index, feature_index, feature_neigboor, pairwise_vectors):
@@ -171,21 +178,66 @@ class MLPCRF(Model):
             return set_subtensor(P_pairwise_current[:, index, label_index, index_neighboor, label_neighboor], potential)
 
         for fill_pairwise_for_label_index_i3(label_index, P_pairwise_current, index, index_neighboor, feature_index, feature_neigboor, pairwise_vectors):
-            return theano.scan(fn=fill_pairwise_for_label_neighboor_i4 , sequences=[T.arange(self.num_labels)], outputs_info=[P_unaries_current], non_sequences=[index, index_neighboor, label_index, feature_index, feature_neigboor, pairwise_vectors])[-1]
+            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_for_label_neighboor_i4 , sequences=[T.arange(self.num_labels)], outputs_info=[P_unaries_current], non_sequences=[index, index_neighboor, label_index, feature_index, feature_neigboor, pairwise_vectors])
+            return scan_outputs[-1], scan_updates
 
         def fill_pairwise_for_index_and_neighboor_i2(index_neighboor, P_pairwise_current, index, feature_index, mlp_outputs, pairwise_vectors):
             feature_neigboor = mlp_outputs[:, ?, ?, :]
-            return theano.scan(fn=fill_pairwise_for_label_index_i3, sequences=[T.arange(self.num_labels)], outputs_info=[P_unaries_current], non_sequences=[index, index_neighboor, feature_index, feature_neigboor, pairwise_vectors])[-1]
+            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_for_label_index_i3, sequences=[T.arange(self.num_labels)], outputs_info=[P_unaries_current], non_sequences=[index, index_neighboor, feature_index, feature_neigboor, pairwise_vectors])
+            return scan_outputs[-1], scan_updates
 
         def fill_pairwise_for_index_i1(index, neighboors, P_pairwise_current, mlp_outputs, pairwise_vectors):
             feature_index = mlp_outputs[:, ?, ?, :]
-            return theano.scan(fn=fill_pairwise_for_index_and_neighboor_i2, sequences=[neighboors], outputs_info[P_pairwise_current], non_sequences=[index, feature_index, mlp_outputs, pairwise_vectors])[-1]
+            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_for_index_and_neighboor_i2, sequences=[neighboors], outputs_info[P_pairwise_current], non_sequences=[index, feature_index, mlp_outputs, pairwise_vectors])
+            return scan_outputs[-1], scan_updates
         
-        P_pairwise = theano.scan(fn=fill_pairwise_for_index_i1, sequences=[T.arange(self.num_labels), self.connections], outputs_info=[P_pairwise], non_sequences=[mlp_outputs, self.pairwise_vectors])[-1]
+        scan_outputs, scan_updates_pairwise = theano.scan(fn=fill_pairwise_for_index_i1, sequences=[T.arange(self.num_labels), self.connections], outputs_info=[P_pairwise], non_sequences=[mlp_outputs, self.pairwise_vectors])
+        P_pairwise = scan_outputs[-1]
 
-        return P_unaries, P_pairwise
+        scan_updates_unaries.update(scan_updates_pairwise)
 
+        return P_unaries, P_pairwise, scan_updates_unaries
 
+    def calculate_energy(self, P_unaries, P_pairwise, outputs):
+        """
+        Calculate the energy
+
+        Parameters
+        ----------
+        P_unaries : (num_batches, num_indexes, num_labels) tensor
+            The unary potentials of the CRF.
+        P_pairwise : (num_batches, num_indexes, num_labels, num_indexes, num_labels) tensor
+            The pairwise potentials of the CRF.
+        outputs : (num_batches, num_indexes) tensor
+
+        Returns
+        -------
+        energy : (num_batches) tensor
+        """
+        """
+        Calculate the pairwise potentials energy.
+        Does an equivalent of:
+        for b in batches
+            for i in index:
+                li = outputs[b, i]
+                lv = outputs[b, neighboors(i)]
+                energy[b] += P_pairwise[b, i, li, v, lv].sum()
+        """
+        def fill_pairwise_energy_for_index(index, neighboors_index, current_energy, batch):
+            label_index = outputs[b, index]
+            label_neighboor = outputs[b, neighboors_index]
+            current_energy + P_pairwise[b, i, label_index, neighboor_index, label_neighboor]).sum()
+
+        def fill_pairwise_energy_for_batch(batch):
+            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_energy_for_index, sequences=[theano.tensor.arange(self.num_indexes), self.connections], outputs_info=[0], non_sequences=[batch])
+            return scan_outputs[-1], scan_updates
+
+        scan_outputs, scan_updates = theano.map(fn=fill_pairwise_energy_for_batch, sequences=[theano.tensor.arange(outputs.shape[1])])
+        energy_pairwise = scan_outputs
+
+        energy_unaries = P_unaries[outputs].sum(axis=0)
+        return energy_unaries + energy_pairwise, scan_updates
+            
 
     def calculate_derivates_energy(self, outputs, d_unaries_to_update=None, d_pairwise_to_update=None):
         """
@@ -202,6 +254,7 @@ class MLPCRF(Model):
             The derivative given theunary potentials of the CRF.
         derivative_pairwise : (num_batches, num_indexes, num_labels, num_indexes, num_labels) tensor
             The derivative given The pairwise potentials of the CRF.
+        updates : subclass of dictionary specifying the update rules for all shared variables
         """
 
         if d_unaries_to_update is None:
@@ -215,25 +268,25 @@ class MLPCRF(Model):
             derivative_pairwise = d_pairwise_to_update
 
         """
-        Inefficient I think.
         Fill the pairwise potentials derivatives.
         Does an equivalent of:
         for i in index:
-            for b in batches;
-               li = outputs[b, i]
-               for v in neighboors(i):
-                   lv = outputs[b, v]
-                   derivative[b, i, li, v, lv] += 1
+           li = outputs[:, i]
+           for v in neighboors(i):
+               lv = outputs[:, v]
+               derivative[:, i, li, v, lv] += 1
         """
-        def fill_pairwise_derivative(index, neighboors_indexes, P_pairwise_d_current, outputs):
-            def fill_pairwise_derivative_for_batch_index(batch_index_, P_pairwise_d_current_, index_, neighboors_indexes_, outputs_):
-                def fill_pairwise_derivative_for_neighboor(neighboor_index__, P_pairwise_d_current__, batch_index__, index__, label_index__, outputs__):
-                    label_neighboor__ = outputs__[batch_index__, neighboor_index__]
-                    return inc_subtensor(P_pairwise_d_current__[batch_index, index, label_index__, neighboor_index__, label_neighboor__], 1)
-                return theano.scan(fn=fill_pairwise_derivative_for_neighboor, sequences=[neighboors_indexes_], outputs_info=P_pairwise_d_current_, non_sequences=[batch_index_, index_, outputs_[batch_index_, index_], outputs_])[-1]
-            return theano.scan(fn=fill_pairwise_derivative_for_batch_index, sequences=[theano.tensor.arange(outputs.shape[0])], outputs_info=[P_pairwise_d_current], non_sequences=[index, neigboors_indexes, outputs])[-1]
+        def fill_pairwise_derivative_for_neighboor(neighboor_index, P_pairwise_d_current, index, label_index, outputs):
+            label_neighboor = outputs[:, neighboor_index]
+            return inc_subtensor(P_pairwise_d_current[:, index, label_index, neighboor_index, label_neighboor], 1)
 
-        derivative_pairwise = theano.scan(fn=fill_pairwise_derivative, sequences=[theano.tensor.arange(outputs.shape[1])], outputs_info=[derivative_pairwise], non_sequences=[neigboors_indexes, outputs], n_steps=self.num_indexes)[-1]
+        def fill_pairwise_derivative(index, neighboors_indexes, P_pairwise_d_current, outputs):
+            label_index = outputs[:, index]
+            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_derivative_for_neighboor, sequences=[neighboors_indexes], outputs_info=[P_pairwise_d_current], non_sequences=[index, label_index, outputs])
+            return scan_outputs[-1], scan_updates
+
+        scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_derivative, sequences=[theano.tensor.arange(self.num_indexes), self.connections], outputs_info=[derivative_pairwise], non_sequences=[outputs], n_steps=self.num_indexes)
+        derivative_pairwise = scan_outputs[-1]
 
         """
         Fill the unary potentials derivatives.
@@ -243,9 +296,11 @@ class MLPCRF(Model):
         """
 
         
-        derivative_unaries = theano.scan(fn=lambda batch_index, derivative_unaries_current, outputs: inc_subtensor(derivative_unaries_current[batch_index, :, outputs[batch_index, :]], 1),
-                                         sequences=[theano.tensor.arange(outputs.shape[0])], outputs_info=derivative_unaries, non_sequences=[outputs])[-1]
-        return derivative_unaries, derivative_pairwise
+        scan_outputs, scan_updates2 = theano.scan(fn=lambda batch_index, derivative_unaries_current, outputs: inc_subtensor(derivative_unaries_current[batch_index, :, outputs[batch_index, :]], 1),
+                                         sequences=[theano.tensor.arange(outputs.shape[0])], outputs_info=derivative_unaries, non_sequences=[outputs])
+        derivative_unaries = scan_outputs[-1]
+        scan_updates.update(scan_updates2)
+        return derivative_unaries, derivative_pairwise, scan_updates
 
     def gibbs_sample_step(self, P_unaries, P_pairwise, current_output):
         """
@@ -262,6 +317,7 @@ class MLPCRF(Model):
         Returns
         -------
         new_output : (num_batches, num_indexes) tensor
+        updates : subclass of dictionary specifying the update rules for all shared variables
         """
         """
         Does one iteration of gibbs sampling.
@@ -278,5 +334,5 @@ class MLPCRF(Model):
             update_case = theano_multinomial(probabilities) # num_batches
             new_output = set_subtensor(current_output[index], update_case)
             return new_output
-        Outputs = theano.scan(fn=update_case, sequences=[theano.tensor.arange(current_output.shape[1]), self.connections], outputs_info=[current_output], non_sequences=[P_unaries, P_pairwise], n_steps=self.num_indexes)
-        return Outputs[-1]
+        scan_outputs, scan_updates = theano.scan(fn=update_case, sequences=[theano.tensor.arange(self.num_indexes), self.connections], outputs_info=[current_output], non_sequences=[P_unaries, P_pairwise], n_steps=self.num_indexes)
+        return scan_outputs[-1], scan_updates

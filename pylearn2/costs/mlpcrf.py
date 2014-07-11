@@ -76,7 +76,7 @@ def ConstrastiveDivergence(Cost):
         rval = OrderedDict()
 
         X, Y = data
-        #TODO
+        #TODO ?
 
         return rval
 
@@ -92,23 +92,19 @@ def ConstrastiveDivergence(Cost):
 
         P_unaries, P_pairwise = model.get_potentials(X)
 
-        pos_phase_grads, pos_updates = 
-            self._get_positive_phase(model, Y)
+        d_unaries_pos, d_pairwise_pos = self._get_positive_phase(model, Y)
 
-        neg_phase_grads, neg_updates = 
-            self._get_negative_phase(model, P_unaries, P_pairwise, Y)
+        d_unaries_neg, d_pairwise_neg = self._get_negative_phase(model, P_unaries, P_pairwise, Y)
+
+        d_unaries_estimate = d_unaries_pos + d_unaries_neg
+        d_pairwise_estimate = d_pairwise_pos + d_pairwise_neg
 
         updates = OrderedDict()
-        for key, val in pos_updates.items():
-            updates[key] = val
-        for key, val in neg_updates.items():
-            updates[key] = val
+        updates[d_unaries] = d_unaries_estimate
+        updates[d_pairwise] = d_pairwise_estimate
 
         gradients = OrderedDict()
-        for param in list(pos_phase_grads.keys()):
-            gradients[param] = neg_phase_grads[param] + pos_phase_grads[param]
-
-        #TODO: How to propagate the gradients through the MLP ?
+        gradients = model.propagate_gradient(gradients, d_unaries, d_pairwise)
 
         return gradients, updates
 
