@@ -117,7 +117,7 @@ def get_window_bounds_for_index(output_size, unaries_pool_shape):
             bounds[index, 2] = j
             bounds[index, 3] = j + unaries_pool_shape[1]
             index += 1
-    return sharedX(bounds)
+    return theano.shared(bounds)
 
 def get_window_center_for_index(output_size, unaries_pool_shape):
     """
@@ -272,7 +272,7 @@ class MLPCRF(Model):
 
         def fill_unaries_for_index(bounds, index, P_unaries_current, mlp_outputs, unaries_vectors):            
             mlp_outputs_seen = mlp_outputs[:, bounds[0]:bounds[1], bounds[2]:bounds[3], :].reshape(mlp_outputs.shape[0], -1)
-            return set_subtensor(P_unaries_current[:, index, :], T.dot(mlp_outputs_seen, unaries_vectors.T))
+            return T.set_subtensor(P_unaries_current[:, index, :], T.dot(mlp_outputs_seen, unaries_vectors.T))
         scan_outputs, scan_updates_unaries = theano.scan(fn=fill_unaries_for_index, sequences=[self.window_bounds_for_index, T.arange(self.num_indexes)], outputs_info=[P_unaries], non_sequences=[mlp_outputs_new_space, self.unaries_vectors])
         P_unaries = scan_outputs[-1]
 
@@ -290,7 +290,7 @@ class MLPCRF(Model):
 
         def fill_pairwise_for_label_neighbor_i4(label_neighbor, P_pairwise_current, index, index_neighbor, label_index, feature_index, feature_neigboor, pairwise_vectors):
             potential = T.dot(T.abs_(feature_index - feature_neighbor), pairwise_vectors[label_index, label_neighbor])
-            return set_subtensor(P_pairwise_current[:, index, label_index, index_neighbor, label_neighbor], potential)
+            return T.set_subtensor(P_pairwise_current[:, index, label_index, index_neighbor, label_neighbor], potential)
 
         def fill_pairwise_for_label_index_i3(label_index, P_pairwise_current, index, index_neighbor, feature_index, feature_neigboor, pairwise_vectors):
             scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_for_label_neighbor_i4 , sequences=[T.arange(self.num_labels)], outputs_info=[P_unaries_current], non_sequences=[index, index_neighbor, label_index, feature_index, feature_neigboor, pairwise_vectors])
@@ -306,7 +306,7 @@ class MLPCRF(Model):
             scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_for_index_and_neighbor_i2, sequences=[neighbors[:neighborhoods_size]], outputs_info=[P_pairwise_current], non_sequences=[index, feature_index, mlp_outputs, pairwise_vectors])
             return scan_outputs[-1], scan_updates
         
-        scan_outputs, scan_updates_pairwise = theano.scan(fn=fill_pairwise_for_index_i1, sequences=[T.arange(self.num_labels), self.window_centers, self.neighbors, self.neighborhoods_sizes], outputs_info=[P_pairwise], non_sequences=[mlp_outputs, self.pairwise_vectors])
+        scan_outputs, scan_updates_pairwise = theano.scan(fn=fill_pairwise_for_index_i1, sequences=[T.arange(self.num_labels), self.window_centers, self.neighbors, self.neighborhoods_sizes], outputs_info=[P_pairwise], non_sequences=[mlp_outputs_new_space, self.pairwise_vectors])
         P_pairwise = scan_outputs[-1]
 
         scan_updates_unaries.update(scan_updates_pairwise)
@@ -393,7 +393,7 @@ class MLPCRF(Model):
         """
         def fill_pairwise_derivative_for_neighbor(neighbor_index, P_pairwise_d_current, index, label_index, outputs):
             label_neighbor = outputs[:, neighbor_index]
-            return inc_subtensor(P_pairwise_d_current[:, index, label_index, neighbor_index, label_neighbor], 1)
+            return T.inc_subtensor(P_pairwise_d_current[:, index, label_index, neighbor_index, label_neighbor], 1)
 
         def fill_pairwise_derivative(index, neighbors_indexes, neighborhoods_size, P_pairwise_d_current, outputs):
             label_index = outputs[:, index]
@@ -411,7 +411,7 @@ class MLPCRF(Model):
         """
 
         
-        scan_outputs, scan_updates2 = theano.scan(fn=lambda batch_index, derivative_unaries_current, outputs: inc_subtensor(derivative_unaries_current[batch_index, :, outputs[batch_index, :]], 1),
+        scan_outputs, scan_updates2 = theano.scan(fn=lambda batch_index, derivative_unaries_current, outputs: T.inc_subtensor(derivative_unaries_current[batch_index, :, outputs[batch_index, :]], 1),
                                          sequences=[theano.tensor.arange(outputs.shape[0])], outputs_info=derivative_unaries, non_sequences=[outputs])
         derivative_unaries = scan_outputs[-1]
         scan_updates.update(scan_updates2)
@@ -447,7 +447,7 @@ class MLPCRF(Model):
             P_for_labels = T.exp(T.neg(P_unaries[:, index, :] +  sum_P_pairwise))
             probabilities = P_for_labels / P_for_labels.sum(axis=1) # num_batches x num_labels
             update_case = self.theano_rng.multinomial(probabilities) # num_batches
-            new_output = set_subtensor(current_output[index], update_case)
+            new_output = T.set_subtensor(current_output[index], update_case)
             return new_output
         scan_outputs, scan_updates = theano.scan(fn=update_case, sequences=[theano.tensor.arange(self.num_indexes), self.neighbors, self.neighborhoods_sizes], outputs_info=[current_output], non_sequences=[P_unaries, P_pairwise], n_steps=self.num_indexes)
         return scan_outputs[-1], scan_updates
