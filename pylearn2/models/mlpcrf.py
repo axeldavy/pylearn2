@@ -296,7 +296,7 @@ class MLPCRF(Model):
 
         def fill_pairwise_for_index_i1(index, location, neighbors, neighborhoods_size, P_pairwise_current, mlp_outputs, pairwise_vectors):
             feature_index = mlp_outputs[:, location[0], location[1], :]
-            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_for_index_and_neighbor_i2, sequences=[neighbors[:neighborhoods_size]], outputs_info[P_pairwise_current], non_sequences=[index, feature_index, mlp_outputs, pairwise_vectors])
+            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_for_index_and_neighbor_i2, sequences=[neighbors[:neighborhoods_size]], outputs_info=[P_pairwise_current], non_sequences=[index, feature_index, mlp_outputs, pairwise_vectors])
             return scan_outputs[-1], scan_updates
         
         scan_outputs, scan_updates_pairwise = theano.scan(fn=fill_pairwise_for_index_i1, sequences=[T.arange(self.num_labels), self.window_centers, self.neighbors, self.neighborhoods_sizes], outputs_info=[P_pairwise], non_sequences=[mlp_outputs, self.pairwise_vectors])
