@@ -95,7 +95,7 @@ class ConstrastiveDivergence(Cost):
         X, Y = data
         assert Y is not None
 
-        P_unaries, P_pairwise = model.get_potentials(X)
+        P_unaries, P_pairwise, get_potentials_updates = model.get_potentials(X)
 
         pos_phase_grads, pos_updates = self._get_positive_phase(model, P_unaries, P_pairwise, Y)
 
@@ -104,6 +104,8 @@ class ConstrastiveDivergence(Cost):
         energy = pos_phase_energy + neg_phase_energy
 
         updates = OrderedDict()
+        for key, val in get_potentials_updates.items():
+            updates[key] = val
         for key, val in pos_updates.items():
             updates[key] = val
         for key, val in neg_updates.items():
