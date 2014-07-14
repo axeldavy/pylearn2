@@ -196,7 +196,7 @@ class MLPCRF(Model):
         #rval['CRF_Potentials_norm'] = ...
         return rval
 
-    @wraps(get_monitoring_data_specs)
+    @wraps(Model.get_monitoring_data_specs)
     def get_monitoring_data_specs(self):
         """
         Notes
@@ -208,19 +208,19 @@ class MLPCRF(Model):
         source = (self.get_input_source(), self.get_target_source())
         return (space, source)
 
-    @wraps(Layer.get_params)
+    @wraps(Model.get_params)
     def get_params(self):
         params = self.mlp.get_params()
         params.append(self.unaries_vectors)
         params.append(self.pairwise_vectors)
         return params
 
-    @wraps(set_batch_size)
+    @wraps(Model.set_batch_size)
     def set_batch_size(self, batch_size):
         self.mlp.set_batch_size(batch_size)
         self.batch_size = batch_size
 
-    @wraps(get_lr_scalers)
+    @wraps(Model.get_lr_scalers)
     def get_lr_scalers(self):
         return self.mlp.get_lr_scalers()
 
