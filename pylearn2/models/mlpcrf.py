@@ -366,7 +366,7 @@ class MLPCRF(Model):
         Returns
         -------
         derivative_unaries : (num_batches, num_indexes, num_labels) tensor
-            The derivative given theunary potentials of the CRF.
+            The derivative given the unary potentials of the CRF.
         derivative_pairwise : (num_batches, num_indexes, num_labels, num_indexes, num_labels) tensor
             The derivative given The pairwise potentials of the CRF.
         updates : subclass of dictionary specifying the update rules for all shared variables
