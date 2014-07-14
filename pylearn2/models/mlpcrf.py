@@ -127,8 +127,8 @@ def get_window_center_for_index(output_size, unaries_pool_shape):
     centers = np.zeros((output_size[0] * output_size[1], 2), np.int)
     for i in range(output_size[0]):
         for j in range(output_size[1]):
-            centers[index, 0] = i + (unaries_pool_shape[0] + 1)//2
-            centers[index, 1] = j + (unaries_pool_shape[1] + 1)//2
+            centers[index, 0] = i + (unaries_pool_shape[0])//2
+            centers[index, 1] = j + (unaries_pool_shape[1])//2
             index += 1
     return theano.shared(centers)
 
@@ -194,7 +194,7 @@ class MLPCRF(Model):
                                               num_channels=self.mlp_output_space.num_channels)
         self.pairwise_vectors = sharedX(np.zeros((num_labels, num_labels, self.mlp_output_space.num_channels)))
         self.unaries_vectors = sharedX(np.zeros((unaries_pool_shape[0] * unaries_pool_shape[1] * self.mlp_output_space.num_channels, num_labels)))
-        self.output_space = VectorSpace(dim=output_size[0] * output_size[1])
+        self.output_space = IndexSpace(num_labels, output_size[0] * output_size[1])
 
     @wraps(Model.get_monitoring_channels)
     def get_monitoring_channels(self, data):
