@@ -54,6 +54,7 @@ def ConstrastiveDivergence(Cost):
         self.theano_rng = make_theano_rng(theano_rng, 2014+8+7,
                 which_method="binomial")
 
+
     def expr(self, model, data):
         """
         .. todo::
@@ -86,6 +87,7 @@ def ConstrastiveDivergence(Cost):
 
             WRITEME
         """
+        self.gibbs_var = sharedX(np.zeros(self.num_gibbs_steps, model.batch_size, model.num_indexes)) 
         self.get_data_specs(model)[0].validate(data)
         X, Y = data
         assert Y is not None
@@ -142,9 +144,10 @@ def ConstrastiveDivergence(Cost):
             return self.model.calculate_energy(P_unaries, P_pairwise, Y)
 
         samples_Y_outputs, samples_Y_updates = theano.scan(fn=call_gibbs_sampling_step, outputs_info=[Y], non_sequences=[P_unaries, P_pairwise], n_steps=self.num_gibbs_steps)
-        samples_energies_outputs, samples_energies_updates = theano.map(fn=compute_energy_for_samples, sequences=[samples_Y_outputs], non_sequences=[P_unaries, P_pairwise])
+        samples_energies_outputs, samples_energies_updates = theano.map(fn=compute_energy_for_samples, sequences=[self.gibbs_var], non_sequences=[P_unaries, P_pairwise])
         
         updates = OrderedDict()
+        updates[self.gibbs_var] = samples_Y_outputs
         for key, val in samples_Y_updates.items():
             updates[key] = val
         for key, val in samples_energies_updates.items():
@@ -154,7 +157,7 @@ def ConstrastiveDivergence(Cost):
 
         neg_phase_grad = OrderedDict(
             safe_zip(params, T.grad(-samples_energies_outputs.mean(),
-                                    params, consider_constant=samples_Y_outputs,
+                                    params, consider_constant=self.gibbs_var,
                                     disconnected_inputs='ignore'))
             )
 
