@@ -168,10 +168,8 @@ class MLPCRF(Model):
         self.num_labels = num_labels
         self.theano_rng = make_theano_rng(None, 2014+8+7, which_method="multinomial")
 
-    @wraps(Model.set_input_space)
-    def set_input_space(self, space):
+        space = self.mlp.get_input_space()
         self.input_space = space
-        self.mlp.set_input_space(space)
 
         self.mlp_output_space = self.mlp.get_output_space()
         if not (isinstance(self.mlp_output_space, Conv2DSpace)):
