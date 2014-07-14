@@ -339,12 +339,12 @@ class MLPCRF(Model):
                 energy[b] += P_pairwise[b, i, li, v, lv].sum()
         """
         def fill_pairwise_energy_for_index(index, neighbors_index, neighborhoods_size, current_energy, batch):
-            label_index = outputs[b, index]
-            label_neighbor = outputs[b, neighbors_index[:neighborhoods_size]]
-            return current_energy + P_pairwise[b, i, label_index, neighbor_index[:neighborhoods_size], label_neighbor].sum()
+            label_index = outputs[batch, index]
+            label_neighbor = outputs[batch, neighbors_index[:neighborhoods_size]]
+            return current_energy + P_pairwise[batch, index, label_index, neighbor_index[:neighborhoods_size], label_neighbor].sum()
 
         def fill_pairwise_energy_for_batch(batch):
-            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_energy_for_index, sequences=[theano.tensor.arange(self.num_indexes), self.neighbors, self.neighborhoods_sizes], outputs_info=[0], non_sequences=[batch])
+            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_energy_for_index, sequences=[theano.tensor.arange(self.num_indexes), self.neighbors, self.neighborhoods_sizes], outputs_info=[sharedX(0)], non_sequences=[batch])
             return scan_outputs[-1], scan_updates
 
         scan_outputs, scan_updates = theano.map(fn=fill_pairwise_energy_for_batch, sequences=[theano.tensor.arange(outputs.shape[0])])
