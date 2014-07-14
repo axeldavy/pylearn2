@@ -161,6 +161,7 @@ class MLPCRF(Model):
             raise ValueError("MLPCRF expects an object of class CRFNeighborhood as input")
         self.mlp = mlp
         self.batch_size = mlp.batch_size
+        self.force_batch_size = self.batch_size
         self.output_size = output_size
         self.num_indexes = output_size[0] * output_size[1]
         self.neighbors = crf_neighborhood.neighborhoods
