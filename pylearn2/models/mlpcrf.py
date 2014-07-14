@@ -101,8 +101,8 @@ class CRFNeighborhood():
         for current_node in range(lattice_length):
             self.neighborhoods[current_node, 0:self.neighborhoods_sizes[current_node]] = neighborhoods_dict[current_node]
 
-        self.neighborhoods_sizes = sharedX(self.neighborhoods_sizes)
-        self.neighborhoods = sharedX(self.neighborhoods)
+        self.neighborhoods_sizes = theano.shared(self.neighborhoods_sizes)
+        self.neighborhoods = theano.shared(self.neighborhoods)
 
 def get_window_bounds_for_index(output_size, unaries_pool_shape):
     """
