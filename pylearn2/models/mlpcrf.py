@@ -341,7 +341,7 @@ class MLPCRF(Model):
         def fill_pairwise_energy_for_index(index, neighbors_index, neighborhoods_size, current_energy, batch):
             label_index = outputs[batch, index]
             label_neighbor = outputs[batch, neighbors_index[:neighborhoods_size]]
-            return current_energy + P_pairwise[batch, index, label_index, neighbor_index[:neighborhoods_size], label_neighbor].sum()
+            return current_energy + P_pairwise[batch, index, label_index, neighbors_index[:neighborhoods_size], label_neighbor].sum()
 
         def fill_pairwise_energy_for_batch(batch):
             scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_energy_for_index, sequences=[theano.tensor.arange(self.num_indexes), self.neighbors, self.neighborhoods_sizes], outputs_info=[sharedX(0)], non_sequences=[batch])
