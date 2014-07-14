@@ -29,12 +29,13 @@ from pylearn2.utils import make_name
 from pylearn2.utils import safe_izip
 from pylearn2.utils import safe_zip
 from pylearn2.utils import sharedX
+from pylearn2.utils import wraps
 from pylearn2.utils.rng import make_theano_rng
 
 
 logger = logging.getLogger(__name__) 
 
-def ConstrastiveDivergence(Cost):
+class ConstrastiveDivergence(Cost):
     """
     Parameters
     ----------
@@ -78,6 +79,10 @@ def ConstrastiveDivergence(Cost):
         #TODO ?
 
         return rval
+
+    @wraps(Cost.get_data_specs)
+    def get_data_specs(self, model):
+        return model.get_monitoring_data_specs()
 
     def get_gradients(self, model, data):
         """
