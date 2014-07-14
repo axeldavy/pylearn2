@@ -99,7 +99,36 @@ class CRFNeighborhood():
 
         self.neighborhoods_sizes = sharedX(self.neighborhoods_sizes)
         self.neighborhoods = sharedX(self.neighborhoods)
-        
+
+def get_window_bounds_for_index(output_size, unaries_pool_shape):
+    """
+    TODO
+    """
+    index = 0
+    bounds = np.zeros((output_size[0] * output_size[1], 4), np.int)
+    for i in range(output_size[0]):
+        for j in range(output_size[1]):
+            bounds[index, 0] = i
+            bounds[index, 1] = i + unaries_pool_shape[0]
+            bounds[index, 2] = j
+            bounds[index, 3] = j + unaries_pool_shape[1]
+            index += 1
+    return sharedX(bounds)
+
+def get_window_center_for_index(output_size, unaries_pool_shape):
+    """
+    TODO
+    """
+    index = 0
+    centers = np.zeros((output_size[0] * output_size[1], 2), np.int)
+    for i in range(output_size[0]):
+        for j in range(output_size[1]):
+            centers[index, 0] = i + (unaries_pool_shape[0] + 1)//2
+            centers[index, 1] = j + (unaries_pool_shape[1] + 1)//2
+            index += 1
+    return sharedX(centers)
+
+
 class MLPCRF(Model):
     """
     This model is a MLP followed by a CRF for the outputs.
@@ -133,7 +162,9 @@ class MLPCRF(Model):
         self.num_indexes = output_size[0] * output_size[1]
         self.neighbors = crf_neighborhood.neighborhoods
         self.neighborhoods_sizes = crf_neighborhood.neighborhoods_sizes
-        self.unaries_pool_shape = unaries_pool_shape ???
+        self.unaries_pool_shape = unaries_pool_shape
+        self.window_bounds_for_index = get_window_bounds_for_index(output_size, unaries_pool_shape)
+        self.window_centers = get_window_center_for_index(output_size, unaries_pool_shape)
         self.num_labels = num_labels
 
     @wraps(Model.set_input_space)
