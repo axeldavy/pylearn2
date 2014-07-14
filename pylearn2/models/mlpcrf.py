@@ -8,7 +8,6 @@ import numpy as np
 import warnings
 
 from theano.compat.python2x import OrderedDict
-from theano.sandbox.rng_mrg.MRG_RandomStreams import multinomial as theano_multinomial
 from theano import tensor as T
 
 from pylearn2.linear.matrixmul import MatrixMul
@@ -166,6 +165,7 @@ class MLPCRF(Model):
         self.window_bounds_for_index = get_window_bounds_for_index(output_size, unaries_pool_shape)
         self.window_centers = get_window_center_for_index(output_size, unaries_pool_shape)
         self.num_labels = num_labels
+        self.theano_rng = make_theano_rng(None, 2014+8+7, which_method="multinomial")
 
     @wraps(Model.set_input_space)
     def set_input_space(self, space):
@@ -439,7 +439,7 @@ class MLPCRF(Model):
             sum_P_pairwise = theano.map(fn=lambda batch_index, index, neigboors_indexes, current_output, P_pairwise: P_pairwise[batch_index, index, :, neigboors_indexes, current_output[batch_index, neigboors_indexes]].sum(axis=1), sequences=[theano.tensor.arange(current_output.shape[0])], non_sequences=[index, neigboors_indexes[:neighborhoods_size], current_output, P_pairwise])
             P_for_labels = T.exp(T.neg(P_unaries[:, index, :] +  sum_P_pairwise))
             probabilities = P_for_labels / P_for_labels.sum(axis=1) # num_batches x num_labels
-            update_case = theano_multinomial(probabilities) # num_batches
+            update_case = self.theano_rng.multinomial(probabilities) # num_batches
             new_output = set_subtensor(current_output[index], update_case)
             return new_output
         scan_outputs, scan_updates = theano.scan(fn=update_case, sequences=[theano.tensor.arange(self.num_indexes), self.neighbors, self.neighborhoods_sizes], outputs_info=[current_output], non_sequences=[P_unaries, P_pairwise], n_steps=self.num_indexes)

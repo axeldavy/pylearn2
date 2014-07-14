@@ -16,8 +16,6 @@ import warnings
 
 from theano.compat.python2x import OrderedDict
 from theano import config
-from theano.sandbox.rng_mrg import MRG_RandomStreams
-RandomStreams = MRG_RandomStreams
 from theano import tensor as T
 
 import pylearn2
