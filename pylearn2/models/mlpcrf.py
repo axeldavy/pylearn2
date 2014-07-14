@@ -187,7 +187,7 @@ class MLPCRF(Model):
                                 str(self.unaries_pool_shape[1] + self.output_size[1]) + "] but got " +\
                                 str(self.mlp_output_space.shape))
 
-        self.desired_mlp_output_space = Conv2DSpace(shape=self.unaries_pool_shape,
+        self.desired_mlp_output_space = Conv2DSpace(shape=self.mlp_output_space.shape,
                                               axes=('b', 0, 1, 'c'),
                                               num_channels=self.mlp_output_space.num_channels)
         self.pairwise_vectors = sharedX(np.zeros((num_labels, num_labels, self.mlp_output_space.num_channels)))
