@@ -92,9 +92,9 @@ def ConstrastiveDivergence(Cost):
 
         P_unaries, P_pairwise = model.get_potentials(X)
 
-        pos_phase_energy, pos_updates = self._get_positive_phase(model, P_unaries, P_pairwise, Y)
+        pos_phase_grads, pos_updates = self._get_positive_phase(model, P_unaries, P_pairwise, Y)
 
-        neg_phase_energy, neg_updates = self._get_negative_phase(model, P_unaries, P_pairwise, Y)
+        neg_phase_grads, neg_updates = self._get_negative_phase(model, P_unaries, P_pairwise, Y)
 
         energy = pos_phase_energy + neg_phase_energy
 
@@ -105,8 +105,8 @@ def ConstrastiveDivergence(Cost):
             updates[key] = val
 
         gradients = OrderedDict()
-    
-        # TODO: the cost is the energy. propagate the gradient though the network, and do like for dbm to make the sampling ok
+        for param in list(pos_phase_grads.keys()):
+            gradients[param] = neg_phase_grads[param] + pos_phase_grads[param]
 
         return gradients, updates
 
@@ -117,7 +117,16 @@ def ConstrastiveDivergence(Cost):
             WRITEME
         """
         positive_energy, positive_updates = model.calculate_energy(P_unaries, P_pairwise, Y)
-        return positive_energy, positive_updates
+
+        params = list(model.get_params())
+
+        pos_phase_grad = OrderedDict(
+            safe_zip(params, T.grad(positive_energy.mean(),
+                                    params,
+                                    disconnected_inputs='ignore'))
+            )
+
+        return pos_phase_grad, positive_updates
 
     def _get_negative_phase(model, P_unaries, P_pairwise, Y):
         """
@@ -125,12 +134,28 @@ def ConstrastiveDivergence(Cost):
 
             WRITEME
         """
-        def call_gibbs_sampling_step(Y, energy_for_Y, P_unaries, P_pairwise):
+        def call_gibbs_sampling_step(Y, P_unaries, P_pairwise):
             next_Y, next_Y_updates = model.gibbs_sample_step(P_unaries, P_pairwise, Y)
-            energy_for_next_Y, energy_for_next_Y_updates = self.model.calculate_energy(P_unaries, P_pairwise, next_Y)
-            assert(next_Y_updates == None and energy_for_next_Y_updates == None)
-            return [next_Y, energy_for_next_Y]
+            return next_Y, next_Y_updates
 
-        [samples_Y_outputs, samples_energy_outputs], samples_updates = theano.scan(fn=call_gibbs_sampling_step, outputs_info=[Y, sharedX(0)], non_sequences=[P_unaries, P_pairwise], n_steps=self.num_gibbs_steps)
+        def compute_energy_for_samples(Y, P_unaries, P_pairwise):
+            return self.model.calculate_energy(P_unaries, P_pairwise, Y)
 
-        return samples_energy_outputs.mean(axis=1), samples_updates
+        samples_Y_outputs, samples_Y_updates = theano.scan(fn=call_gibbs_sampling_step, outputs_info=[Y], non_sequences=[P_unaries, P_pairwise], n_steps=self.num_gibbs_steps)
+        samples_energies_outputs, samples_energies_updates = theano.map(fn=compute_energy_for_samples, sequences=[samples_Y_outputs], non_sequences=[P_unaries, P_pairwise])
+        
+        updates = OrderedDict()
+        for key, val in samples_Y_updates.items():
+            updates[key] = val
+        for key, val in samples_energies_updates.items():
+            updates[key] = val
+
+        params = list(model.get_params())
+
+        neg_phase_grad = OrderedDict(
+            safe_zip(params, T.grad(-samples_energies_outputs.mean(),
+                                    params, consider_constant=samples_Y_outputs,
+                                    disconnected_inputs='ignore'))
+            )
+
+        return neg_phase_grad, updates
