@@ -90,7 +90,7 @@ class ConstrastiveDivergence(Cost):
 
             WRITEME
         """
-        self.gibbs_var = sharedX(np.zeros(-self.num_gibbs_steps, model.batch_size, model.num_indexes))) 
+        self.gibbs_var = sharedX(np.zeros((self.num_gibbs_steps, model.batch_size, model.num_indexes))) 
         self.get_data_specs(model)[0].validate(data)
         X, Y = data
         assert Y is not None

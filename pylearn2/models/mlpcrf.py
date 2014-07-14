@@ -9,6 +9,7 @@ import warnings
 
 from theano.compat.python2x import OrderedDict
 from theano import tensor as T
+from theano import config
 
 from pylearn2.linear.matrixmul import MatrixMul
 from pylearn2.models.mlp import Layer, MLP
