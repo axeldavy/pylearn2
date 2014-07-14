@@ -18,6 +18,7 @@ from pylearn2.space import VectorSpace
 from pylearn2.utils import py_integer_types
 from pylearn2.utils import sharedX
 from pylearn2.utils import wraps
+from pylearn2.utils.rng import make_theano_rng
 
 class CRFNeighborhood():
     """
