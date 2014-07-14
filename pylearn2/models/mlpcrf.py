@@ -17,6 +17,7 @@ from pylearn2.space import Conv2DSpace
 from pylearn2.space import VectorSpace
 from pylearn2.utils import py_integer_types
 from pylearn2.utils import sharedX
+from pylearn2.utils import wraps
 
 class CRFNeighborhood():
     """
