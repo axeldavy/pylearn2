@@ -105,7 +105,7 @@ def ConstrastiveDivergence(Cost):
             updates[key] = val
 
         gradients = OrderedDict()
-        
+    
         # TODO: the cost is the energy. propagate the gradient though the network, and do like for dbm to make the sampling ok
 
         return gradients, updates
@@ -116,7 +116,8 @@ def ConstrastiveDivergence(Cost):
 
             WRITEME
         """
-        return self.model.calculate_energy(P_unaries, P_pairwise, Y)
+        positive_energy, positive_updates = model.calculate_energy(P_unaries, P_pairwise, Y)
+        return positive_energy, positive_updates
 
     def _get_negative_phase(model, P_unaries, P_pairwise, Y):
         """
@@ -124,4 +125,12 @@ def ConstrastiveDivergence(Cost):
 
             WRITEME
         """
-        #TODO
+        def call_gibbs_sampling_step(Y, energy_for_Y, P_unaries, P_pairwise):
+            next_Y, next_Y_updates = model.gibbs_sample_step(P_unaries, P_pairwise, Y)
+            energy_for_next_Y, energy_for_next_Y_updates = self.model.calculate_energy(P_unaries, P_pairwise, next_Y)
+            assert(next_Y_updates == None and energy_for_next_Y_updates == None)
+            return [next_Y, energy_for_next_Y]
+
+        [samples_Y_outputs, samples_energy_outputs], samples_updates = theano.scan(fn=call_gibbs_sampling_step, outputs_info=[Y, sharedX(0)], non_sequences=[P_unaries, P_pairwise], n_steps=self.num_gibbs_steps)
+
+        return samples_energy_outputs.mean(axis=1), samples_updates
