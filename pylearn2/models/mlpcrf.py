@@ -160,6 +160,7 @@ class MLPCRF(Model):
         if not (isinstance(crf_neighborhood, CRFNeighborhood)):
             raise ValueError("MLPCRF expects an object of class CRFNeighborhood as input")
         self.mlp = mlp
+        self.batch_size = mlp.batch_size
         self.output_size = output_size
         self.num_indexes = output_size[0] * output_size[1]
         self.neighbors = crf_neighborhood.neighborhoods
@@ -188,7 +189,7 @@ class MLPCRF(Model):
                                               axes=('b', 0, 1, 'c'),
                                               num_channels=self.mlp_output_space.num_channels)
         self.pairwise_vectors = sharedX(np.zeros((num_labels, num_labels, self.mlp_output_space.num_channels)))
-        self.unaries_vectors = sharedX(np.zeros((unaries_pool_shape[0] * unaries_pool_shape[1] * self.mlp_output_space.num_channels, num_label)))
+        self.unaries_vectors = sharedX(np.zeros((unaries_pool_shape[0] * unaries_pool_shape[1] * self.mlp_output_space.num_channels, num_labels)))
 
     @wraps(Model.get_monitoring_channels)
     def get_monitoring_channels(self, data):
