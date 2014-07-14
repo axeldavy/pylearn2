@@ -159,6 +159,7 @@ class MLPCRF(Model):
             raise ValueError("MLPCRF expects an object of class MLP as input")
         if not (isinstance(crf_neighborhood, CRFNeighborhood)):
             raise ValueError("MLPCRF expects an object of class CRFNeighborhood as input")
+        self.mlp = mlp
         self.output_size = output_size
         self.num_indexes = output_size[0] * output_size[1]
         self.neighbors = crf_neighborhood.neighborhoods
@@ -186,8 +187,8 @@ class MLPCRF(Model):
         self.desired_mlp_output_space = Conv2DSpace(shape=self.unaries_pool_shape,
                                               axes=('b', 0, 1, 'c'),
                                               num_channels=self.mlp_output_space.num_channels)
-        self.pairwise_vectors = sharedX(numpy.zeros((num_labels, num_labels, self.mlp_output_space.num_channels)))
-        self.unaries_vectors = sharedX(numpy.zeros((unaries_pool_shape[0] * unaries_pool_shape[1] * self.mlp_output_space.num_channels, num_label)))
+        self.pairwise_vectors = sharedX(np.zeros((num_labels, num_labels, self.mlp_output_space.num_channels)))
+        self.unaries_vectors = sharedX(np.zeros((unaries_pool_shape[0] * unaries_pool_shape[1] * self.mlp_output_space.num_channels, num_label)))
 
     @wraps(Model.get_monitoring_channels)
     def get_monitoring_channels(self, data):
@@ -366,12 +367,12 @@ class MLPCRF(Model):
         """
 
         if d_unaries_to_update is None:
-            derivative_unaries = sharedX(numpy.zeros((self.batch_size, self.num_indexes, self.num_labels), config.floatX))
+            derivative_unaries = sharedX(np.zeros((self.batch_size, self.num_indexes, self.num_labels), config.floatX))
         else:
             derivative_unaries = d_unaries_to_update
 
         if d_pairwise_to_update is None:
-            derivative_pairwise = sharedX(numpy.zeros((self.batch_size, self.num_indexes, self.num_labels, self.num_indexes, self.num_labels), config.floatX))
+            derivative_pairwise = sharedX(np.zeros((self.batch_size, self.num_indexes, self.num_labels, self.num_indexes, self.num_labels), config.floatX))
         else:
             derivative_pairwise = d_pairwise_to_update
 
