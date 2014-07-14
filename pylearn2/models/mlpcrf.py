@@ -258,10 +258,10 @@ class MLPCRF(Model):
         
         """
 
-        def fill_unaries_for_index(???, index, P_unaries_current, mlp_outputs, unaries_vectors):            
-            mlp_outputs_seen = mlp_outputs[:, ???, ???, :].reshape(mlp_outputs.shape[0], -1)
+        def fill_unaries_for_index(bounds, index, P_unaries_current, mlp_outputs, unaries_vectors):            
+            mlp_outputs_seen = mlp_outputs[:, bouds[0]:bounds[1], bounds[2]:bounds[3], :].reshape(mlp_outputs.shape[0], -1)
             return set_subtensor(P_unaries_current[:, index, :], T.dot(mlp_outputs_seen, unaries_vectors.T))
-        scan_outputs, scan_updates_unaries = theano.scan(fn=fill_unaries_for_index, sequences=[??, T.arange(self.num_indexes)], outputs_info=[P_unaries], non_sequences=[mlp_outputs_new_space, self.unaries_vectors])
+        scan_outputs, scan_updates_unaries = theano.scan(fn=fill_unaries_for_index, sequences=[self.window_bounds_for_index, T.arange(self.num_indexes)], outputs_info=[P_unaries], non_sequences=[mlp_outputs_new_space, self.unaries_vectors])
         P_unaries = scan_outputs[-1]
 
         """
@@ -285,16 +285,16 @@ class MLPCRF(Model):
             return scan_outputs[-1], scan_updates
 
         def fill_pairwise_for_index_and_neighbor_i2(index_neighbor, P_pairwise_current, index, feature_index, mlp_outputs, pairwise_vectors):
-            feature_neigboor = mlp_outputs[:, ?, ?, :]
+            feature_neigboor = mlp_outputs[:, self.window_centers[index_neighbor, 0], self.window_centers[index_neighbor, 1], :]
             scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_for_label_index_i3, sequences=[T.arange(self.num_labels)], outputs_info=[P_unaries_current], non_sequences=[index, index_neighbor, feature_index, feature_neigboor, pairwise_vectors])
             return scan_outputs[-1], scan_updates
 
-        def fill_pairwise_for_index_i1(index, neighbors, neighborhoods_size, P_pairwise_current, mlp_outputs, pairwise_vectors):
-            feature_index = mlp_outputs[:, ?, ?, :]
+        def fill_pairwise_for_index_i1(index, location, neighbors, neighborhoods_size, P_pairwise_current, mlp_outputs, pairwise_vectors):
+            feature_index = mlp_outputs[:, location[0], location[1], :]
             scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_for_index_and_neighbor_i2, sequences=[neighbors[:neighborhoods_size]], outputs_info[P_pairwise_current], non_sequences=[index, feature_index, mlp_outputs, pairwise_vectors])
             return scan_outputs[-1], scan_updates
         
-        scan_outputs, scan_updates_pairwise = theano.scan(fn=fill_pairwise_for_index_i1, sequences=[T.arange(self.num_labels), self.neighbors, self.neighborhoods_sizes], outputs_info=[P_pairwise], non_sequences=[mlp_outputs, self.pairwise_vectors])
+        scan_outputs, scan_updates_pairwise = theano.scan(fn=fill_pairwise_for_index_i1, sequences=[T.arange(self.num_labels), self.window_centers, self.neighbors, self.neighborhoods_sizes], outputs_info=[P_pairwise], non_sequences=[mlp_outputs, self.pairwise_vectors])
         P_pairwise = scan_outputs[-1]
 
         scan_updates_unaries.update(scan_updates_pairwise)
