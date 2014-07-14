@@ -280,7 +280,7 @@ class MLPCRF(Model):
             potential = T.dot(T.abs_(feature_index - feature_neighbor), pairwise_vectors[label_index, label_neighbor])
             return set_subtensor(P_pairwise_current[:, index, label_index, index_neighbor, label_neighbor], potential)
 
-        for fill_pairwise_for_label_index_i3(label_index, P_pairwise_current, index, index_neighbor, feature_index, feature_neigboor, pairwise_vectors):
+        def fill_pairwise_for_label_index_i3(label_index, P_pairwise_current, index, index_neighbor, feature_index, feature_neigboor, pairwise_vectors):
             scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_for_label_neighbor_i4 , sequences=[T.arange(self.num_labels)], outputs_info=[P_unaries_current], non_sequences=[index, index_neighbor, label_index, feature_index, feature_neigboor, pairwise_vectors])
             return scan_outputs[-1], scan_updates
 
