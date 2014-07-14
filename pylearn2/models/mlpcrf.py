@@ -192,6 +192,7 @@ class MLPCRF(Model):
                                               num_channels=self.mlp_output_space.num_channels)
         self.pairwise_vectors = sharedX(np.zeros((num_labels, num_labels, self.mlp_output_space.num_channels)))
         self.unaries_vectors = sharedX(np.zeros((unaries_pool_shape[0] * unaries_pool_shape[1] * self.mlp_output_space.num_channels, num_labels)))
+        self.output_space = VectorSpace(dim=output_size[0] * output_size[1])
 
     @wraps(Model.get_monitoring_channels)
     def get_monitoring_channels(self, data):
