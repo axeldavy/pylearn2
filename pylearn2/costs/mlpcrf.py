@@ -117,7 +117,7 @@ class ConstrastiveDivergence(Cost):
 
         return gradients, updates
 
-    def _get_positive_phase(model, P_unaries, P_pairwise, Y):
+    def _get_positive_phase(self, model, P_unaries, P_pairwise, Y):
         """
         .. todo::
 
@@ -135,7 +135,7 @@ class ConstrastiveDivergence(Cost):
 
         return pos_phase_grad, positive_updates
 
-    def _get_negative_phase(model, P_unaries, P_pairwise, Y):
+    def _get_negative_phase(self, model, P_unaries, P_pairwise, Y):
         """
         .. todo::
 
