@@ -10,6 +10,7 @@ import warnings
 from theano.compat.python2x import OrderedDict
 from theano import tensor as T
 from theano import config
+import theano
 
 from pylearn2.linear.matrixmul import MatrixMul
 from pylearn2.models.mlp import Layer, MLP
@@ -129,7 +130,7 @@ def get_window_center_for_index(output_size, unaries_pool_shape):
             centers[index, 0] = i + (unaries_pool_shape[0] + 1)//2
             centers[index, 1] = j + (unaries_pool_shape[1] + 1)//2
             index += 1
-    return sharedX(centers)
+    return theano.shared(centers)
 
 
 class MLPCRF(Model):
@@ -270,7 +271,7 @@ class MLPCRF(Model):
         """
 
         def fill_unaries_for_index(bounds, index, P_unaries_current, mlp_outputs, unaries_vectors):            
-            mlp_outputs_seen = mlp_outputs[:, bouds[0]:bounds[1], bounds[2]:bounds[3], :].reshape(mlp_outputs.shape[0], -1)
+            mlp_outputs_seen = mlp_outputs[:, bounds[0]:bounds[1], bounds[2]:bounds[3], :].reshape(mlp_outputs.shape[0], -1)
             return set_subtensor(P_unaries_current[:, index, :], T.dot(mlp_outputs_seen, unaries_vectors.T))
         scan_outputs, scan_updates_unaries = theano.scan(fn=fill_unaries_for_index, sequences=[self.window_bounds_for_index, T.arange(self.num_indexes)], outputs_info=[P_unaries], non_sequences=[mlp_outputs_new_space, self.unaries_vectors])
         P_unaries = scan_outputs[-1]
