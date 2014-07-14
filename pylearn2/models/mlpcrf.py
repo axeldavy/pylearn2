@@ -176,7 +176,7 @@ class MLPCRF(Model):
         if not (isinstance(self.mlp_output_space, Conv2DSpace)):
             raise ValueError("MLPCRF expects the MLP to output a Conv2DSpace")
 
-        if self.mlp_output_space.shape[0] <> self.unaries_pool_shape[0] + self.output_size[0] or
+        if self.mlp_output_space.shape[0] <> self.unaries_pool_shape[0] + self.output_size[0] or\
            self.mlp_output_space.shape[1] <> self.unaries_pool_shape[1] + self.output_size[1]:
                raise ValueError("MLPCRF expects the MLP output to be of shape [" +\
                                 str(self.unaries_pool_shape[0] + self.output_size[0]) + ", " +\
@@ -186,6 +186,8 @@ class MLPCRF(Model):
         self.desired_mlp_output_space = Conv2DSpace(shape=self.unaries_pool_shape,
                                               axes=('b', 0, 1, 'c'),
                                               num_channels=self.mlp_output_space.num_channels)
+        self.pairwise_vectors = sharedX(numpy.zeros((num_labels, num_labels, self.mlp_output_space.num_channels)))
+        self.unaries_vectors = sharedX(numpy.zeros((unaries_pool_shape[0] * unaries_pool_shape[1] * self.mlp_output_space.num_channels, num_label)))
 
     @wraps(Model.get_monitoring_channels)
     def get_monitoring_channels(self, data):
@@ -209,7 +211,10 @@ class MLPCRF(Model):
 
     @wraps(Layer.get_params)
     def get_params(self):
-        #TODO
+        params = self.mlp.get_params()
+        params.append(self.unaries_vectors)
+        params.append(self.pairwise_vectors)
+        return params
 
     @wraps(set_batch_size)
     def set_batch_size(self, batch_size):
