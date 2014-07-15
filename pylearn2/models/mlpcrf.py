@@ -338,7 +338,7 @@ class MLPCRF(Model):
                                           self.labelcost[outputs[batch, index], outputs[batch, neighbors_indexes[:neighborhoods_size]]])
         
         def fill_pairwise_energy_for_batch(batch, P_pairwise, outputs):
-            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_energy_for_index,
+            scan_outputs, scan_updates = theano.reduce(fn=fill_pairwise_energy_for_index,
                                                 sequences=[dict(input=self.pairwise_indexes, taps=[0, 1]),
                                                             T.arange(self.num_indexes),
                                                             self.neighbors,
@@ -346,7 +346,7 @@ class MLPCRF(Model):
                                                 outputs_info=sharedX(0),
                                                 non_sequences=[P_pairwise, outputs, batch],
                                                 n_steps=self.num_indexes)
-            return scan_outputs[-1], scan_updates
+            return scan_outputs, scan_updates
 
         scan_outputs, scan_updates = theano.map(fn=fill_pairwise_energy_for_batch,
                                                     sequences=[T.arange(self.batch_size)],
@@ -470,8 +470,7 @@ class MLPCRF(Model):
                                                 sequences=[theano.tensor.arange(self.batch_size),
                                                            current_output[:, index],
                                                            P_pairwise[:, pairwise_index_start: pairwise_index_next]],
-                                                non_sequences=[neighbors_indexes[:neighborhoods_size], current_output],
-                                                n_steps=self.batch_size)
+                                                non_sequences=[neighbors_indexes[:neighborhoods_size], current_output])
             P_for_labels = T.exp(T.neg(P_unaries[:, index, :] +  sum_P_pairwise))
             probabilities = P_for_labels / T.sum(P_for_labels, axis=1)[:,None] # num_batches x num_labels
             update_case = self.theano_rng.multinomial(pvals=probabilities)

@@ -170,7 +170,7 @@ class ConstrastiveDivergence(Cost):
 
         neg_phase_grad = OrderedDict(
             safe_zip(params, T.grad(-samples_energies_outputs.mean(),
-                                    params, consider_constant=self.gibbs_var,
+                                    params, consider_constant=[self.gibbs_var],
                                     disconnected_inputs='ignore'))
             )
 
