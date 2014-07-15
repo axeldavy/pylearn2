@@ -296,8 +296,7 @@ class MLPCRF(Model):
                                                                      self.neighbors,
                                                                      self.neighborhoods_sizes],
                                                           outputs_info=[P_pairwise_current],
-                                                          non_sequences=[mlp_outputs_new_space, self.pairwise_vector],
-                                                          n_steps=self.num_indexes
+                                                          non_sequences=[mlp_outputs_new_space, self.pairwise_vector]
                                                           )
 
         scan_updates_unaries.update(scan_updates_pairwise)
@@ -345,8 +344,10 @@ class MLPCRF(Model):
                                                 n_steps=self.num_indexes)
             return scan_outputs[-1], scan_updates
 
-        scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_energy_for_batch,
-                                                    sequences=[T.arange(self.batch_size)], non_sequences=[P_pairwise, Labelcosts, outputs])
+        scan_outputs, scan_updates = theano.map(fn=fill_pairwise_energy_for_batch,
+                                                    sequences=[T.arange(self.num_batches)],
+                                                    non_sequences=[P_pairwise, self.Labelcosts, outputs])
+
         energy_pairwise = scan_outputs
 
         def fill_energy_unaries_for_index(index, current_energy, batch):
