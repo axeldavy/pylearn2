@@ -197,7 +197,7 @@ class MLPCRF(Model):
         self.desired_mlp_output_space = Conv2DSpace(shape=self.mlp_output_space.shape,
                                               axes=('b', 0, 1, 'c'),
                                               num_channels=self.mlp_output_space.num_channels)
-        self.pairwise_vectors = sharedX(np.zeros((num_labels, num_labels, self.mlp_output_space.num_channels)))
+        self.pairwise_vector = sharedX(np.zeros((self.mlp_output_space.num_channels)))
         self.unaries_vectors = sharedX(np.zeros((unaries_pool_shape[0] * unaries_pool_shape[1] * self.mlp_output_space.num_channels, num_labels)))
         self.output_space = IndexSpace(num_labels, output_size[0] * output_size[1])
 
@@ -249,7 +249,7 @@ class MLPCRF(Model):
         -------
         P_unaries : (num_batches, num_indexes, num_labels) tensor
             The unary potentials of the CRF.
-        P_pairwise : (num_batches, num_indexes, num_labels, num_indexes, num_labels) tensor
+        P_pairwise : (num_batches, ???) tensor
             The pairwise potentials of the CRF.
             the fourth and fifth dim are for the neighbor of the point we consider
             (according to the defined connections).
@@ -281,40 +281,26 @@ class MLPCRF(Model):
         scan_outputs, scan_updates_unaries = theano.scan(fn=fill_unaries_for_index, sequences=[self.window_bounds_for_index, T.arange(self.num_indexes)], outputs_info=[P_unaries], non_sequences=[mlp_outputs_new_space, self.unaries_vectors])
         P_unaries = scan_outputs[-1]
 
-        """
-        Fill the pairwise potentials.
-        Does an equivalent of:
-        for i in indexes:
-            u1 = vectors for i across the batch
-            for v in neighbors(i):
-                u2 = vectors for v across the batch
-                for li in labels:
-                    for lv in labels:
-                        P_pairwise[:, i, li, v, lv] = |u1-u2| * W'[li, lv] # to optimise with tensordot
-        """
 
-        def fill_pairwise_for_label_neighbor_i4(label_neighbor, P_pairwise_current, index, index_neighbor, label_index, feature_index, feature_neighbor, pairwise_vectors):
-            potential = T.dot(T.abs_(feature_index - feature_neighbor), pairwise_vectors[label_index, label_neighbor])
-            return T.set_subtensor(P_pairwise_current[:, index, label_index, index_neighbor, label_neighbor], potential)
+        def fill_pairwise_for_index(index, pairwise_index_start, pairwise_index_next, neighbors, neighborhoods_size, P_pairwise_current, mlp_outputs, pairwise_vector):
+            feature_index = mlp_outputs[:, self.window_centers[index, 0], self.window_centers[index, 1], :]
+            neighbors_list = neighbors[:neighborhoods_size]]
+            features_neighbors = mlp_outputs[:, self.window_centers[neighbors_list, 0], self.window_centers[neighbors_list, 1], :]
+            abs_sub_feat = T.abs_(features_neighbors - feature_index[:, None, :])
+            pairwise_terms_for_index = T.tensordot(abs_sub_feat, pairwise_vector, axes=[[2],[0]])
+            return set_subtensor(P_pairwise_current[:, pairwise_index_start: pairwise_index_next], pairwise_terms_for_index)
 
-        def fill_pairwise_for_label_index_i3(label_index, P_pairwise_current, index, index_neighbor, feature_index, feature_neighbor, pairwise_vectors):
-            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_for_label_neighbor_i4 , sequences=[T.arange(self.num_labels)], outputs_info=[P_pairwise_current], non_sequences=[index, index_neighbor, label_index, feature_index, feature_neighbor, pairwise_vectors])
-            return scan_outputs[-1], scan_updates
-
-        def fill_pairwise_for_index_and_neighbor_i2(index_neighbor, P_pairwise_current, index, feature_index, mlp_outputs, pairwise_vectors):
-            feature_neighbor = mlp_outputs[:, self.window_centers[index_neighbor, 0], self.window_centers[index_neighbor, 1], :]
-            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_for_label_index_i3, sequences=[T.arange(self.num_labels)], outputs_info=[P_pairwise_current], non_sequences=[index, index_neighbor, feature_index, feature_neighbor, pairwise_vectors])
-            return scan_outputs[-1], scan_updates
-
-        def fill_pairwise_for_index_i1(index, location, neighbors, neighborhoods_size, P_pairwise_current, mlp_outputs, pairwise_vectors):
-            feature_index = mlp_outputs[:, location[0], location[1], :]
-            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_for_index_and_neighbor_i2, sequences=[neighbors[:neighborhoods_size]], outputs_info=[P_pairwise_current], non_sequences=[index, feature_index, mlp_outputs, pairwise_vectors])
-            return scan_outputs[-1], scan_updates
-        
-        scan_outputs, scan_updates_pairwise = theano.scan(fn=fill_pairwise_for_index_i1, sequences=[T.arange(self.num_labels), self.window_centers, self.neighbors, self.neighborhoods_sizes], outputs_info=[P_pairwise], non_sequences=[mlp_outputs_new_space, self.pairwise_vectors])
-        P_pairwise = scan_outputs[-1]
+        scan_outputs, scan_updates_pairwise = theano.scan(fn=fill_pairwise_for_index,
+                                                          sequences=[T.arange(self.num_indexes),
+                                                                     dict(input=self.pairwise_indexes, taps=[0, 1]),
+                                                                     self.neighbors,
+                                                                     self.neighborhoods_sizes],
+                                                          outputs_info=[P_pairwise_current],
+                                                          non_sequences=[mlp_outputs_new_space, self.pairwise_vector]
+                                                          )
 
         scan_updates_unaries.update(scan_updates_pairwise)
+        P_pairwise = scan_outputs[-1]
 
         return P_unaries, P_pairwise, scan_updates_unaries
 

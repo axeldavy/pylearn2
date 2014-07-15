@@ -138,7 +138,7 @@ class ConstrastiveDivergence(Cost):
         #                            disconnected_inputs='ignore'))
         #    )
         pos_phase_grad = OrderedDict(
-            safe_zip(params, T.subgraph_grad(params,[], start=top_grad))
+            safe_zip(params, theano.subgraph_grad(params,[], start=top_grad)[0])
             )
 
         return pos_phase_grad, positive_updates
