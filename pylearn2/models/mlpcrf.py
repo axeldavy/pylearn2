@@ -38,7 +38,9 @@ class CRFNeighborhood():
         the neighbors of the node i, plus eventually some meaningless 0.
     neighbors_sizes : a vector which contains the sizes of the neighborhood
         for each node in the graph. Using it help to stop before the
-        meaningless 0 of neighbors. 
+        meaningless 0 of neighbors.
+    pairwise_indexes : a vector wich allows to access quickly to the good
+        raw in the pairwise potential tensor
     """
 
     def __init__(self, lattice_size, neighborhood_shape):
