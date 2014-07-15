@@ -351,7 +351,15 @@ class MLPCRF(Model):
         scan_outputs, scan_updates = theano.map(fn=fill_pairwise_energy_for_batch, sequences=[theano.tensor.arange(outputs.shape[0])])
         energy_pairwise = scan_outputs
 
-        energy_unaries = P_unaries[outputs].sum(axis=1)
+        def fill_unary_energy_for_index(index, current_energy, batch):
+            label = outputs[batch, index]
+            return current_energy + P_unaries[b, index, label]
+
+        def fill_unary_energy_for_batch(batch):
+            return theano.reduce(fn=fill_unary_energy_for_index, sequences=[theano.tensor.arange(self.num_indexes)], outputs_info=[sharedX(0)], non_sequences=[batch])
+
+        energy_unaries, unaries_update = theano.map(fn=fill_unaries_for_batch, sequences=[theano.tensor.arange(outputs.shape[0])])
+        scan_updates.update(unaries_update)
         return energy_unaries + energy_pairwise, scan_updates
             
 
