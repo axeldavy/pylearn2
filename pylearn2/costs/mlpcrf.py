@@ -124,22 +124,22 @@ class ConstrastiveDivergence(Cost):
 
             WRITEME
         """
-        #positive_energy, positive_updates = model.calculate_energy(P_unaries, P_pairwise, Y)
-        top_grad = OrderedDict()
-        derivative_unaries, derivative_pairwise, positive_updates = model.calculate_derivates_energy(Y)
-        top_grad[P_unaries] = derivative_unaries
-        top_grad[P_pairwise] = derivative_pairwise
+        positive_energy, positive_updates = model.calculate_energy(P_unaries, P_pairwise, Y)
+        #top_grad = OrderedDict()
+        #derivative_unaries, derivative_pairwise, positive_updates = model.calculate_derivates_energy(Y)
+        #top_grad[P_unaries] = derivative_unaries
+        #top_grad[P_pairwise] = derivative_pairwise
 
         params = list(model.get_params())
 
-        #pos_phase_grad = OrderedDict(
-        #    safe_zip(params, T.grad(positive_energy.mean(),
-        #                            params,
-        #                            disconnected_inputs='ignore'))
-        #    )
         pos_phase_grad = OrderedDict(
-            safe_zip(params, theano.subgraph_grad(params,[], start=top_grad)[0])
+            safe_zip(params, T.grad(positive_energy.mean(),
+                                    params,
+                                    disconnected_inputs='ignore'))
             )
+        #pos_phase_grad = OrderedDict(
+        #    safe_zip(params, theano.subgraph_grad(params,[], start=top_grad)[0])
+        #    )
 
         return pos_phase_grad, positive_updates
 

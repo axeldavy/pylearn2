@@ -296,7 +296,8 @@ class MLPCRF(Model):
                                                                      self.neighbors,
                                                                      self.neighborhoods_sizes],
                                                           outputs_info=[P_pairwise_current],
-                                                          non_sequences=[mlp_outputs_new_space, self.pairwise_vector]
+                                                          non_sequences=[mlp_outputs_new_space, self.pairwise_vector],
+                                                          n_steps=self.num_indexes
                                                           )
 
         scan_updates_unaries.update(scan_updates_pairwise)
@@ -340,11 +341,12 @@ class MLPCRF(Model):
                                                             self.neighbors,
                                                             self.neighborhoods_sizes],
                                                 outputs_info=sharedX(0),
-                                                non_sequences=[P_pairwise, Labelcosts, outputs, batch])
+                                                non_sequences=[P_pairwise, Labelcosts, outputs, batch],
+                                                n_steps=self.num_indexes)
             return scan_outputs[-1], scan_updates
 
         scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_energy_for_batch,
-                                                    sequences=[T.arange(self.num_batches)], non_sequences=[P_pairwise, Labelcosts, outputs])
+                                                    sequences=[T.arange(self.batch_size)], non_sequences=[P_pairwise, Labelcosts, outputs])
         energy_pairwise = scan_outputs
 
         def fill_energy_unaries_for_index(index, current_energy, batch):
@@ -394,18 +396,26 @@ class MLPCRF(Model):
            li = outputs[:, i]
            for v in neighbors(i):
                lv = outputs[:, v]
-               derivative[:, i, li, v, lv] += 1
+               derivative[:, index(i,v)] += labelcost[li, lv]
         """
-        def fill_pairwise_derivative_for_neighbor(neighbor_index, P_pairwise_d_current, index, label_index, outputs):
-            label_neighbor = outputs[:, neighbor_index]
-            return T.inc_subtensor(P_pairwise_d_current[:, index, label_index, neighbor_index, label_neighbor], 1)
+        def fill_pairwise_derivative_for_neighbor(neighbor_index, index, labels_index, outputs):
+            labels_neighbor = outputs[:, neighbor_index]
+            return self.labelcost[labels_index, labels_neighbor]
 
-        def fill_pairwise_derivative(index, neighbors_indexes, neighborhoods_size, P_pairwise_d_current, outputs):
-            label_index = outputs[:, index]
-            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_derivative_for_neighbor, sequences=[neighbors_indexes[:neighborhoods_size]], outputs_info=[P_pairwise_d_current], non_sequences=[index, label_index, outputs])
-            return scan_outputs[-1], scan_updates
+        def fill_pairwise_derivative(index, pairwise_index_start, pairwise_index_next, neighbors_indexes, neighborhoods_size, P_pairwise_d_current, outputs):
+            labels_index = outputs[:, index]
+            scan_outputs, scan_updates = theano.map(fn=fill_pairwise_derivative_for_neighbor, sequences=[neighbors_indexes[:neighborhoods_size]], non_sequences=[labels_index, outputs])
+            return T.inc_subtensor(P_pairwise_d_current[:, pairwise_index_start: pairwise_index_next], scan_outputs.T), scan_updates
 
-        scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_derivative, sequences=[theano.tensor.arange(self.num_indexes), self.neighbors, self.neighborhoods_sizes], outputs_info=[derivative_pairwise], non_sequences=[outputs], n_steps=self.num_indexes)
+        scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_derivative,
+                                                 sequences=
+                                                    [theano.tensor.arange(self.num_indexes),
+                                                     dict(input=self.pairwise_indexes, taps=[0, 1]),
+                                                     self.neighbors,
+                                                     self.neighborhoods_sizes],
+                                                 outputs_info=[derivative_pairwise],
+                                                 non_sequences=[outputs],
+                                                 n_steps=self.num_indexes)
         derivative_pairwise = scan_outputs[-1]
 
         """
@@ -445,15 +455,30 @@ class MLPCRF(Model):
         for i in index: #Would be better if index order is random
             # does one update step
             for b in batches:
-                sum_P_pairwise_for_i[b] = P_pairwise[b, i, :, list_of_neighbors, outputs[list_of_neighbors]].sum(axis=1)
+                sum_P_pairwise_for_i[b] = P_pairwise[b, slice_index] . labelcost[label_i, outputs[b, list_of_neighbors]]
         """
-        def update_case(index, neighbors_indexes, neighborhoods_size, current_output, P_unaries, P_pairwise):
-            sum_P_pairwise, update = theano.map(fn=lambda batch_index, index, neighbors_indexes, current_output, P_pairwise: P_pairwise[batch_index, index, :, neighbors_indexes, current_output[batch_index, neighbors_indexes]].sum(axis=1), sequences=[theano.tensor.arange(current_output.shape[0])], non_sequences=[index, neighbors_indexes[:neighborhoods_size], current_output, P_pairwise])
+        def calculate_sum_P_pairwise_for_batch(batch, label_i, P_pairwise_for_slice_and_batch, neighbors, outputs):
+            return T.dot(P_pairwise_for_slice_and_batch, self.labelcost[label_i, outputs[batch, neighbors]])
+
+        def update_case(index, pairwise_index_start, pairwise_index_next, neighbors_indexes, neighborhoods_size, current_output, P_unaries, P_pairwise):
+            sum_P_pairwise, update = theano.map(fn=calculate_sum_P_pairwise_for_batch,
+                                                sequences=[theano.tensor.arange(self.batch_size),
+                                                           current_output[:, index],
+                                                           P_pairwise[:, pairwise_index_start: pairwise_index_next]],
+                                                non_sequences=[neighbors_indexes[:neighborhoods_size], current_output],
+                                                n_steps=self.batch_size)
             P_for_labels = T.exp(T.neg(P_unaries[:, index, :] +  sum_P_pairwise))
             probabilities = P_for_labels / T.sum(P_for_labels, axis=1)[:,None] # num_batches x num_labels
             update_case = self.theano_rng.multinomial(pvals=probabilities)
             update_case = T.argmax(update_case, axis=1) # num_batches
             new_output = T.set_subtensor(current_output[:, index], update_case)
             return new_output, update
-        scan_outputs, scan_updates = theano.scan(fn=update_case, sequences=[theano.tensor.arange(self.num_indexes), self.neighbors, self.neighborhoods_sizes], outputs_info=[current_output], non_sequences=[P_unaries, P_pairwise], n_steps=self.num_indexes)
+        scan_outputs, scan_updates = theano.scan(fn=update_case,
+                                                 sequences=[theano.tensor.arange(self.num_indexes),
+                                                            dict(input=self.pairwise_indexes, taps=[0, 1]),
+                                                            self.neighbors,
+                                                            self.neighborhoods_sizes],
+                                                 outputs_info=[current_output],
+                                                 non_sequences=[P_unaries, P_pairwise],
+                                                 n_steps=self.num_indexes)
         return scan_outputs[-1], scan_updates
