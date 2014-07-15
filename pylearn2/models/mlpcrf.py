@@ -199,6 +199,7 @@ class MLPCRF(Model):
                                               num_channels=self.mlp_output_space.num_channels)
         self.pairwise_vector = sharedX(np.zeros((self.mlp_output_space.num_channels)))
         self.unaries_vectors = sharedX(np.zeros((unaries_pool_shape[0] * unaries_pool_shape[1] * self.mlp_output_space.num_channels, num_labels)))
+        self.labelcost = sharedX(np.zeros((num_labels, num_labels)))
         self.output_space = IndexSpace(num_labels, output_size[0] * output_size[1])
 
     @wraps(Model.get_monitoring_channels)
@@ -225,7 +226,7 @@ class MLPCRF(Model):
     def get_params(self):
         params = self.mlp.get_params()
         params.append(self.unaries_vectors)
-        params.append(self.pairwise_vectors)
+        params.append(self.pairwise_vector)
         return params
 
     @wraps(Model.set_batch_size)
@@ -284,7 +285,7 @@ class MLPCRF(Model):
 
         def fill_pairwise_for_index(index, pairwise_index_start, pairwise_index_next, neighbors, neighborhoods_size, P_pairwise_current, mlp_outputs, pairwise_vector):
             feature_index = mlp_outputs[:, self.window_centers[index, 0], self.window_centers[index, 1], :]
-            neighbors_list = neighbors[:neighborhoods_size]]
+            neighbors_list = neighbors[:neighborhoods_size]
             features_neighbors = mlp_outputs[:, self.window_centers[neighbors_list, 0], self.window_centers[neighbors_list, 1], :]
             abs_sub_feat = T.abs_(features_neighbors - feature_index[:, None, :])
             pairwise_terms_for_index = T.tensordot(abs_sub_feat, pairwise_vector, axes=[[2],[0]])
@@ -304,7 +305,7 @@ class MLPCRF(Model):
 
         return P_unaries, P_pairwise, scan_updates_unaries
 
-    def calculate_energy(self, P_unaries, P_pairwise, Labelcosts, outputs):
+    def calculate_energy(self, P_unaries, P_pairwise, outputs):
         """
         Calculate the energy
 
@@ -340,13 +341,13 @@ class MLPCRF(Model):
                                                             self.neighbors,
                                                             self.neighborhoods_sizes],
                                                 outputs_info=sharedX(0),
-                                                non_sequences=[P_pairwise, Labelcosts, outputs, batch],
+                                                non_sequences=[P_pairwise, self.labelcosts, outputs, batch],
                                                 n_steps=self.num_indexes)
             return scan_outputs[-1], scan_updates
 
         scan_outputs, scan_updates = theano.map(fn=fill_pairwise_energy_for_batch,
                                                     sequences=[T.arange(self.num_batches)],
-                                                    non_sequences=[P_pairwise, self.Labelcosts, outputs])
+                                                    non_sequences=[P_pairwise, self.labelcosts, outputs])
 
         energy_pairwise = scan_outputs
 
