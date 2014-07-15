@@ -31,6 +31,7 @@ from pylearn2.utils import safe_zip
 from pylearn2.utils import sharedX
 from pylearn2.utils import wraps
 from pylearn2.utils.rng import make_theano_rng
+import theano
 
 
 logger = logging.getLogger(__name__) 
@@ -90,7 +91,7 @@ class ConstrastiveDivergence(Cost):
 
             WRITEME
         """
-        self.gibbs_var = sharedX(np.zeros((self.num_gibbs_steps, model.batch_size, model.num_indexes))) 
+        self.gibbs_var = theano.shared(np.zeros((self.num_gibbs_steps, model.batch_size, model.num_indexes), dtype = np.int64)) 
         self.get_data_specs(model)[0].validate(data)
         X, Y = data
         assert Y is not None
@@ -146,7 +147,7 @@ class ConstrastiveDivergence(Cost):
             return next_Y, next_Y_updates
 
         def compute_energy_for_samples(Y, P_unaries, P_pairwise):
-            return self.model.calculate_energy(P_unaries, P_pairwise, Y)
+            return model.calculate_energy(P_unaries, P_pairwise, Y)
 
         samples_Y_outputs, samples_Y_updates = theano.scan(fn=call_gibbs_sampling_step, outputs_info=[Y], non_sequences=[P_unaries, P_pairwise], n_steps=self.num_gibbs_steps)
         samples_energies_outputs, samples_energies_updates = theano.map(fn=compute_energy_for_samples, sequences=[self.gibbs_var], non_sequences=[P_unaries, P_pairwise])
