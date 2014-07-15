@@ -103,7 +103,7 @@ class CRFNeighborhood():
         self.neighborhoods = np.zeros((lattice_length, np.max(self.neighborhoods_sizes))).astype(int)
         for current_node in range(lattice_length):
             self.neighborhoods[current_node, 0:self.neighborhoods_sizes[current_node]] = neighborhoods_dict[current_node]
-        
+
         self.pairwise_indexes = theano.shared(np.cumsum(np.append(0, self.neighborhoods_sizes)))
         self.neighborhoods_sizes = theano.shared(self.neighborhoods_sizes)
         self.neighborhoods = theano.shared(self.neighborhoods)
@@ -171,6 +171,7 @@ class MLPCRF(Model):
         self.force_batch_size = self.batch_size
         self.output_size = output_size
         self.num_indexes = output_size[0] * output_size[1]
+        self.pairwise_indexes = crf_neighborhood.pairwise_indexes
         self.neighbors = crf_neighborhood.neighborhoods
         self.neighborhoods_sizes = crf_neighborhood.neighborhoods_sizes
         self.unaries_pool_shape = unaries_pool_shape
@@ -317,7 +318,7 @@ class MLPCRF(Model):
 
         return P_unaries, P_pairwise, scan_updates_unaries
 
-    def calculate_energy(self, P_unaries, P_pairwise, outputs):
+    def calculate_energy(self, P_unaries, P_pairwise, Labelcosts, outputs):
         """
         Calculate the energy
 
@@ -342,16 +343,22 @@ class MLPCRF(Model):
                 lv = outputs[b, neighbors(i)]
                 energy[b] += P_pairwise[b, i, li, v, lv].sum()
         """
-        def fill_pairwise_energy_for_index(index, neighbors_index, neighborhoods_size, current_energy, batch):
-            label_index = outputs[batch, index]
-            label_neighbor = outputs[batch, neighbors_index[:neighborhoods_size]]
-            return current_energy + P_pairwise[batch, index, label_index, neighbors_index[:neighborhoods_size], label_neighbor].sum()
-
-        def fill_pairwise_energy_for_batch(batch):
-            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_energy_for_index, sequences=[theano.tensor.arange(self.num_indexes), self.neighbors, self.neighborhoods_sizes], outputs_info=[sharedX(0)], non_sequences=[batch])
+        def fill_pairwise_energy_for_index(current_P_index, next_P_index, index, neighbors_indexes, neighborhoods_size, current_energy, P_pairwise, Labelcosts, outputs, batch):
+            return T.dots(P_pairwise[batch, current_P_index:next_P_index],
+                            Labelcosts[outputs[batch, index], outputs[batch, neighbors_indexes[:neighborhoods_size]]])
+        
+        def fill_pairwise_energy_for_batch(batch, P_pairwise, Labelcosts, outputs):
+            scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_energy_for_index,
+                                                sequences=[dict(input=self.pairwise_indexes, taps=[0, 1]),
+                                                            T.arange(self.num_indexes),
+                                                            self.neighbors,
+                                                            self.neighborhoods_sizes],
+                                                outputs_info=sharedX(0),
+                                                non_sequences=[P_pairwise, Labelcosts, outputs, batch])
             return scan_outputs[-1], scan_updates
 
-        scan_outputs, scan_updates = theano.map(fn=fill_pairwise_energy_for_batch, sequences=[theano.tensor.arange(outputs.shape[0])])
+        scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_energy_for_batch,
+                                                    sequences=[T.arange(self.num_batches)], non_sequences=[P_pairwise, Labelcosts, outputs])
         energy_pairwise = scan_outputs
 
         def fill_energy_unaries_for_index(index, current_energy, batch):
