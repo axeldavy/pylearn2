@@ -100,7 +100,8 @@ class CRFNeighborhood():
         self.neighborhoods = np.zeros((lattice_length, np.max(self.neighborhoods_sizes))).astype(int)
         for current_node in range(lattice_length):
             self.neighborhoods[current_node, 0:self.neighborhoods_sizes[current_node]] = neighborhoods_dict[current_node]
-
+        
+        self.pairwise_indexes = theano.shared(np.cumsum(np.append(0, self.neighborhoods_sizes)))
         self.neighborhoods_sizes = theano.shared(self.neighborhoods_sizes)
         self.neighborhoods = theano.shared(self.neighborhoods)
 
