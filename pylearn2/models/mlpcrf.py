@@ -304,7 +304,7 @@ class MLPCRF(Model):
 
         return P_unaries, P_pairwise, scan_updates_unaries
 
-    def calculate_energy(self, P_unaries, P_pairwise, Labelcosts, outputs):
+    def calculate_energy(self, P_unaries, P_pairwise, outputs):
         """
         Calculate the energy
 
@@ -343,8 +343,10 @@ class MLPCRF(Model):
                                                 non_sequences=[P_pairwise, Labelcosts, outputs, batch])
             return scan_outputs[-1], scan_updates
 
-        scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_energy_for_batch,
-                                                    sequences=[T.arange(self.num_batches)], non_sequences=[P_pairwise, Labelcosts, outputs])
+        scan_outputs, scan_updates = theano.map(fn=fill_pairwise_energy_for_batch,
+                                                    sequences=[T.arange(self.num_batches)],
+                                                    non_sequences=[P_pairwise, self.Labelcosts, outputs])
+
         energy_pairwise = scan_outputs
 
         def fill_energy_unaries_for_index(index, current_energy, batch):
