@@ -18,6 +18,7 @@ from pylearn2.models.model import Model
 from pylearn2.space import CompositeSpace
 from pylearn2.space import Conv2DSpace
 from pylearn2.space import VectorSpace
+from pylearn2.space import IndexSpace
 from pylearn2.utils import py_integer_types
 from pylearn2.utils import sharedX
 from pylearn2.utils import wraps
@@ -351,7 +352,15 @@ class MLPCRF(Model):
         scan_outputs, scan_updates = theano.map(fn=fill_pairwise_energy_for_batch, sequences=[theano.tensor.arange(outputs.shape[0])])
         energy_pairwise = scan_outputs
 
-        energy_unaries = P_unaries[outputs].sum(axis=0)
+        def fill_energy_unaries_for_index(index, current_energy, batch):
+            label = outputs[batch, index]
+            return current_energy + P_unaries[batch, index, label]
+
+        def fill_energy_unaries_for_batch(batch):
+            return theano.reduce(fn=fill_energy_unaries_for_index, sequences=[theano.tensor.arange(self.num_indexes)], outputs_info=[sharedX(0)], non_sequences=[batch])
+
+        energy_unaries, unaries_update = theano.map(fn=fill_energy_unaries_for_batch, sequences=[theano.tensor.arange(outputs.shape[0])])
+        scan_updates.update(unaries_update)
         return energy_unaries + energy_pairwise, scan_updates
             
 
@@ -444,11 +453,12 @@ class MLPCRF(Model):
                 sum_P_pairwise_for_i[b] = P_pairwise[b, i, :, list_of_neighbors, outputs[list_of_neighbors]].sum(axis=1)
         """
         def update_case(index, neighbors_indexes, neighborhoods_size, current_output, P_unaries, P_pairwise):
-            sum_P_pairwise = theano.map(fn=lambda batch_index, index, neigboors_indexes, current_output, P_pairwise: P_pairwise[batch_index, index, :, neigboors_indexes, current_output[batch_index, neigboors_indexes]].sum(axis=1), sequences=[theano.tensor.arange(current_output.shape[0])], non_sequences=[index, neigboors_indexes[:neighborhoods_size], current_output, P_pairwise])
+            sum_P_pairwise, update = theano.map(fn=lambda batch_index, index, neighbors_indexes, current_output, P_pairwise: P_pairwise[batch_index, index, :, neighbors_indexes, current_output[batch_index, neighbors_indexes]].sum(axis=1), sequences=[theano.tensor.arange(current_output.shape[0])], non_sequences=[index, neighbors_indexes[:neighborhoods_size], current_output, P_pairwise])
             P_for_labels = T.exp(T.neg(P_unaries[:, index, :] +  sum_P_pairwise))
-            probabilities = P_for_labels / P_for_labels.sum(axis=1) # num_batches x num_labels
-            update_case = self.theano_rng.multinomial(probabilities) # num_batches
-            new_output = T.set_subtensor(current_output[index], update_case)
-            return new_output
+            probabilities = P_for_labels / T.sum(P_for_labels, axis=1)[:,None] # num_batches x num_labels
+            update_case = self.theano_rng.multinomial(pvals=probabilities)
+            update_case = T.argmax(update_case, axis=1) # num_batches
+            new_output = T.set_subtensor(current_output[:, index], update_case)
+            return new_output, update
         scan_outputs, scan_updates = theano.scan(fn=update_case, sequences=[theano.tensor.arange(self.num_indexes), self.neighbors, self.neighborhoods_sizes], outputs_info=[current_output], non_sequences=[P_unaries, P_pairwise], n_steps=self.num_indexes)
         return scan_outputs[-1], scan_updates
