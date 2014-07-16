@@ -22,6 +22,7 @@ from pylearn2.space import IndexSpace
 from pylearn2.utils import py_integer_types
 from pylearn2.utils import sharedX
 from pylearn2.utils import wraps
+from pylearn2.utils import safe_zip
 from pylearn2.utils.rng import make_theano_rng
 
 class CRFNeighborhood():
@@ -106,7 +107,17 @@ class CRFNeighborhood():
 
         cumsum = np.cumsum(np.append(0, self.neighborhoods_sizes))
         self.pairwise_indexes_max = cumsum[-1]
+        self.indexes_reshaped = np.arange(lattice_length).repeat(self.neighborhoods_sizes)
+        self.indexes_neighbours_reshaped = np.concatenate([
+                                                        neighbors[:neighborhoods_size]
+                                                        for (neighbors, neighborhoods_size) in safe_zip(self.neighborhoods, self.neighborhoods_sizes)
+                                                        ]
+                                                        , axis=0)
+
+
         self.pairwise_indexes = theano.shared(cumsum)
+        self.pairwise_indexes_reshaped = theano.shared(self.indexes_reshaped)
+        self.pairwise_indexes_neighbours_reshaped = theano.shared(self.indexes_neighbours_reshaped)
         self.neighborhoods_sizes = theano.shared(self.neighborhoods_sizes)
         self.neighborhoods = theano.shared(self.neighborhoods)
 
