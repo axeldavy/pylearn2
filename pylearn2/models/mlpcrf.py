@@ -431,11 +431,10 @@ class MLPCRF(Model):
         """
         Fill the pairwise potentials derivatives.
         Does an equivalent of:
-        for i in index:
-           li = outputs[:, i]
-           for v in neighbors(i):
-               lv = outputs[:, v]
-               derivative[:, index(i,v)] += labelcost[li, lv]
+        for b in batches:
+            outputs_list = num_labels*outputs[b, pairwise_indexes_reshaped]
+                            + outputs[b, pairwise_indexes_neighbors_reshaped]
+            derivative[b, :] = labelcost.flatten()[outputs_list]
         """
         def fill_pairwise_derivative(batch, derivative_pairwise_current, outputs):
             return T.inc_subtensor(derivative_pairwise_current[batch, :], self.labelcost.flatten()[self.num_labels*outputs[batch, self.pairwise_indexes_reshaped] + outputs[batch, self.pairwise_indexes_neighbors_reshaped]])
@@ -445,7 +444,7 @@ class MLPCRF(Model):
                                                  outputs_info=[derivative_labelcost],
                                                  non_sequences=[outputs])
         
-        derivative_pairwise = scan_outputs[-1].mean(axis=1)
+        derivative_pairwise = scan_outputs[-1]
 
         """
         Fill the unary potentials derivatives.
@@ -453,7 +452,6 @@ class MLPCRF(Model):
         for b in batches:
             derivative[b, :, :] += one_hot(output)
         """
-        
         scan_outputs, scan_updates_2 = theano.scan(fn=lambda batch_index, derivative_unaries_current, outputs: T.inc_subtensor(derivative_unaries_current[batch_index, :, outputs[batch_index, :]], 1),
                                          sequences=[theano.tensor.arange(outputs.shape[0])], outputs_info=[derivative_unaries], non_sequences=[outputs])
         derivative_unaries = scan_outputs[-1]
@@ -463,11 +461,21 @@ class MLPCRF(Model):
         Fill the labelcost potentials derivatives.
         Does an equivalent of:
         for b in batches:
-            derivative[b, :, outputs[b, :]] += 1
+            # initialize a matrix of index
+            M = zeros(P_pairwise_length, num_labels**2)
+            # find the positions in M which corresponds to edge labels (u, v)
+            outputs_list = num_labels*outputs[b, pairwise_indexes_reshaped]
+                            + outputs[b, pairwise_indexes_neighbors_reshaped]
+            # transform outputs_list in a sparse matrix
+            M[:, outputs_list] += 1
+            # use a broadcasted elementwise multiplication to fill M with the potentials
+            # sum over the edges to have a flatten gradient
+            # reshape to have a 2D gradient
+            derivative[:, :] += (P_pairwise[b, :]'*M).sum(axis=1).reshape(5, 5)
         """
         def calculate_grad_cost_for_batch(batch, current_labelcost_d, P_pairwise, outputs):
             M = theano.shared(np.zeros((self.P_pairwise_length, self.num_labels**2), dtype=np.int8))
-            M = T.set_subtensor(M[T.arange(self.P_pairwise_length), self.num_labels*outputs[batch, self.pairwise_indexes_reshaped] + outputs[batch, self.pairwise_indexes_neighbors_reshaped]], 1)
+            M = T.set_subtensor(M[:, self.num_labels*outputs[batch, self.pairwise_indexes_reshaped] + outputs[batch, self.pairwise_indexes_neighbors_reshaped]], 1)
             return current_labelcost_d + (P_pairwise[b, :].T * M).sum(axis=1).reshape(5, 5)
 
         scan_outputs, scan_updates_3 = theano.reduce(fn=calculate_grad_cost_for_batch, sequences=[T.arange(self.batch_size)],
