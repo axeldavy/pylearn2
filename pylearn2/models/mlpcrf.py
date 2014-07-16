@@ -322,12 +322,12 @@ class MLPCRF(Model):
         """
         """
         Calculate the pairwise potentials energy.
-        Does an equivalent of:
+        Does an equivalent of :
         for b in batches
             for i in index:
                 li = outputs[b, i]
                 lv = outputs[b, neighbors(i)]
-                energy[b] += P_pairwise[b, i, li, v, lv].sum()
+                energy[b] += P_pairwise[b, index(i, neighbors(i))]'*Labelcosts[li, lv]
         """
         def fill_pairwise_energy_for_index(current_P_index, next_P_index, index, neighbors_indexes, neighborhoods_size, current_energy, P_pairwise, Labelcosts, outputs, batch):
             return T.dots(P_pairwise[batch, current_P_index:next_P_index],
@@ -348,6 +348,15 @@ class MLPCRF(Model):
                                                     non_sequences=[P_pairwise, self.Labelcosts, outputs])
 
         energy_pairwise = scan_outputs
+
+        """
+        Calculate the unary potentials energy.
+        Does an equivalent of :
+        for b in batches
+            for i in index:
+                li = outputs[b, i]
+                energy[b] += P_unaries[b, i, li]
+        """
 
         def fill_energy_unaries_for_index(index, current_energy, batch):
             label = outputs[batch, index]
