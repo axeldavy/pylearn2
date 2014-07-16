@@ -274,7 +274,6 @@ class MLPCRF(Model):
         for i in indexes:
             u = vectors of outputs seen by the CRF node from the MLP across the batch
             P_unaries[:, i, :] = u * W^T # W: label x num_channels
-        
         """
 
         def fill_unaries_for_index(bounds, index, P_unaries_current, mlp_outputs, unaries_vectors):            
@@ -283,6 +282,16 @@ class MLPCRF(Model):
         scan_outputs, scan_updates_unaries = theano.scan(fn=fill_unaries_for_index, sequences=[self.window_bounds_for_index, T.arange(self.num_indexes)], outputs_info=[P_unaries], non_sequences=[mlp_outputs_new_space, self.unaries_vectors])
         P_unaries = scan_outputs[-1]
 
+
+        """
+        Fill the pairwise potentials.
+        Does an equivalent of:
+        for i in indexes:
+            i_features = vectors of outputs seen for i from the MLP across the batch
+            vl = the list of neighbors
+            v_features = vectors of outputs seen for vl from the MLP across the batch
+            P_pairwise[:, index(i, neigbhbors)] = |u * W^T # W: num_channels
+        """
 
         def fill_pairwise_for_index(index, pairwise_index_start, pairwise_index_next, neighbors, neighborhoods_size, P_pairwise_current, mlp_outputs, pairwise_vector):
             feature_index = mlp_outputs[:, self.window_centers[index, 0], self.window_centers[index, 1], :]
