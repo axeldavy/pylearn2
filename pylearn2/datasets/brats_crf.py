@@ -202,7 +202,7 @@ class BRATS(Dataset):
     def next(self):
         if (self.stochastic and self.count >= self.num_minibatches_train) or ((not (self.stochastic)) and self.count >= self.num_minibatches_test):
             raise StopIteration()
-        X = numpy.zeros(((4,) + self.patch_size + (128,)), dtype=numpy.float32)
+        X = numpy.zeros(((4,) + self.patch_shape + (128,)), dtype=numpy.float32)
         y = numpy.zeros(((128,) + self.output_shape), dtype=numpy.int64)
         index = 0
         if self.stochastic:

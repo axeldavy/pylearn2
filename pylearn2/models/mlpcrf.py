@@ -397,7 +397,7 @@ class MLPCRF(Model):
         return energy_unaries + energy_pairwise, scan_updates
             
 
-    def calculate_derivates_energy(self, outputs, d_unaries_to_update=None, d_pairwise_to_update=None):
+    def calculate_derivates_energy(self, outputs, d_unaries_to_update=None, d_pairwise_to_update=None, derivative_labelcost=None):
         """
         Calculate the derivatives of the energy given
         the unary and pairwise potentials
@@ -424,6 +424,9 @@ class MLPCRF(Model):
             derivative_pairwise = sharedX(np.zeros((self.batch_size, self.P_pairwise_length), config.floatX))
         else:
             derivative_pairwise = d_pairwise_to_update
+
+        if derivative_labelcost is None:
+            derivative_labelcost = T.zeros_like(self.labelcost)
 
         """
         Fill the pairwise potentials derivatives.
@@ -469,13 +472,13 @@ class MLPCRF(Model):
             return current_labelcost_d + (P_pairwise[b, :].T * M).sum(axis=1).reshape(5, 5)
 
         scan_outputs, scan_updates_3 = theano.reduce(fn=calculate_grad_cost_for_batch, sequences=[T.arange(self.batch_size)],
-                                                    outputs_info=[T.zeros_like(self.labelcost)],
-                                                    non_sequences=[P_pairwise, outputs])
+                                                     outputs_info=[derivative_labelcost],
+                                                     non_sequences=[P_pairwise, outputs])
 
         derivative_labelcost = scan_outputs
         scan_updates.update(scan_updates_3)
 
-        return derivative_unaries, derivative_pairwise, scan_updates
+        return derivative_unaries, derivative_pairwise, derivative_labelcost, scan_updates
 
     def gibbs_sample_step(self, P_unaries, P_pairwise, current_output):
         """
