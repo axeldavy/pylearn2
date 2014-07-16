@@ -226,7 +226,7 @@ class BRATS(Dataset):
                     X[..., index] = X_patch
                     index += 1
 
-        mini_batch = (X, y.reshape((128,-1)) # the output can't be 2D. Pylearn2 bug
+        mini_batch = (X, y.reshape((128,-1))) # the output can't be 2D. Pylearn2 bug
         assert index == 128
         self.count += 1
         if self.stochastic:
