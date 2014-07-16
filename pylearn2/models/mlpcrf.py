@@ -108,7 +108,7 @@ class CRFNeighborhood():
         cumsum = np.cumsum(np.append(0, self.neighborhoods_sizes))
         self.pairwise_indexes_max = cumsum[-1]
         self.indexes_reshaped = np.arange(lattice_length).repeat(self.neighborhoods_sizes)
-        self.indexes_neighbours_reshaped = np.concatenate([
+        self.indexes_neighbors_reshaped = np.concatenate([
                                                         neighbors[:neighborhoods_size]
                                                         for (neighbors, neighborhoods_size) in safe_zip(self.neighborhoods, self.neighborhoods_sizes)
                                                         ]
@@ -117,7 +117,7 @@ class CRFNeighborhood():
 
         self.pairwise_indexes = theano.shared(cumsum)
         self.pairwise_indexes_reshaped = theano.shared(self.indexes_reshaped)
-        self.pairwise_indexes_neighbours_reshaped = theano.shared(self.indexes_neighbours_reshaped)
+        self.pairwise_indexes_neighbors_reshaped = theano.shared(self.indexes_neighbors_reshaped)
         self.neighborhoods_sizes = theano.shared(self.neighborhoods_sizes)
         self.neighborhoods = theano.shared(self.neighborhoods)
 
@@ -184,10 +184,14 @@ class MLPCRF(Model):
         self.force_batch_size = self.batch_size
         self.output_size = output_size
         self.num_indexes = output_size[0] * output_size[1]
+
         self.pairwise_indexes = crf_neighborhood.pairwise_indexes
         self.P_pairwise_length = crf_neighborhood.pairwise_indexes_max
+        self.pairwise_indexes_reshaped = crf_neighborhood.pairwise_indexes_reshaped
+        self.pairwise_indexes_neighbors_reshaped = crf_neighborhood.pairwise_indexes_neighbors_reshaped
         self.neighbors = crf_neighborhood.neighborhoods
         self.neighborhoods_sizes = crf_neighborhood.neighborhoods_sizes
+
         self.unaries_pool_shape = unaries_pool_shape
         self.window_bounds_for_index = get_window_bounds_for_index(output_size, unaries_pool_shape)
         self.window_centers = get_window_center_for_index(output_size, unaries_pool_shape)
@@ -448,10 +452,23 @@ class MLPCRF(Model):
         """
 
         
-        scan_outputs, scan_updates2 = theano.scan(fn=lambda batch_index, derivative_unaries_current, outputs: T.inc_subtensor(derivative_unaries_current[batch_index, :, outputs[batch_index, :]], 1),
+        scan_outputs, scan_updates_2 = theano.scan(fn=lambda batch_index, derivative_unaries_current, outputs: T.inc_subtensor(derivative_unaries_current[batch_index, :, outputs[batch_index, :]], 1),
                                          sequences=[theano.tensor.arange(outputs.shape[0])], outputs_info=derivative_unaries, non_sequences=[outputs])
         derivative_unaries = scan_outputs[-1]
-        scan_updates.update(scan_updates2)
+        scan_updates.update(scan_updates_2)
+
+        def calculate_grad_cost_for_batch(batch, current_labelcost_d, P_pairwise, outputs):
+            M = theano.shared(np.zeros((self.P_pairwise_length, self.num_labels**2), dtype=np.int8))
+            T.set_subtensor(M[T.arange(self.P_pairwise_length), self.num_labels*outputs[batch, self.pairwise_indexes_reshaped] + outputs[batch, self.pairwise_indexes_neighbors_reshaped]], 1)
+            return current_labelcost_d + (P_pairwise[b, :].T * M).sum(axis=1).reshape(5, 5)
+
+        scan_outputs, scan_updates_3 = theano.reduce(fn=calculate_grad_cost_for_batch, sequences=[T.arange(self.batch_size)],
+                                                    outputs_info=[T.zeros_like(self.labelcost)],
+                                                    non_sequences=[P_pairwise, outputs])
+
+        derivative_labelcost = scan_outputs
+        scan_updates.update(scan_updates_3)
+
         return derivative_unaries, derivative_pairwise, scan_updates
 
     def gibbs_sample_step(self, P_unaries, P_pairwise, current_output):
