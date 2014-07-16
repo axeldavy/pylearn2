@@ -437,26 +437,25 @@ class MLPCRF(Model):
                lv = outputs[:, v]
                derivative[:, index(i,v)] += labelcost[li, lv]
         """
-        def fill_pairwise_derivative(batch, outputs):
-            return T.inc_subtensor(derivative_pairwise[batch, :], self.labelcost.flatten()[self.num_labels*outputs[batch, self.pairwise_indexes_reshaped] + outputs[batch, self.pairwise_indexes_neighbors_reshaped]])
+        def fill_pairwise_derivative(batch, derivative_pairwise_current, outputs):
+            return T.inc_subtensor(derivative_pairwise_current[batch, :], self.labelcost.flatten()[self.num_labels*outputs[batch, self.pairwise_indexes_reshaped] + outputs[batch, self.pairwise_indexes_neighbors_reshaped]])
 
         scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_derivative,
                                                  sequences=[T.arange(self.batch_size)]
-                                                 outputs_info=T.zeros_like(np.zeros((self.batch_size, self.P_pairwise_length))),
+                                                 outputs_info=[derivative_labelcost],
                                                  non_sequences=[outputs])
         
-        derivative_pairwise = scan_outputs[-1]
+        derivative_pairwise = scan_outputs[-1].mean(axis=1)
 
         """
         Fill the unary potentials derivatives.
         Does an equivalent of:
         for b in batches:
-            derivative[b, :, :] = one_hot(output)
+            derivative[b, :, :] += one_hot(output)
         """
-
         
         scan_outputs, scan_updates_2 = theano.scan(fn=lambda batch_index, derivative_unaries_current, outputs: T.inc_subtensor(derivative_unaries_current[batch_index, :, outputs[batch_index, :]], 1),
-                                         sequences=[theano.tensor.arange(outputs.shape[0])], outputs_info=derivative_unaries, non_sequences=[outputs])
+                                         sequences=[theano.tensor.arange(outputs.shape[0])], outputs_info=[derivative_unaries], non_sequences=[outputs])
         derivative_unaries = scan_outputs[-1]
         scan_updates.update(scan_updates_2)
 
