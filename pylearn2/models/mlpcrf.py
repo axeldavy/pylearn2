@@ -265,8 +265,10 @@ class MLPCRF(Model):
         mlp_outputs_old_space = self.mlp.fprop(inputs)
 
         mlp_outputs_new_space = self.mlp_output_space.format_as(mlp_outputs_old_space, self.desired_mlp_output_space)
-        P_unaries = T.TensorType(config.floatX , (False,)*3)()
-        P_pairwise = T.TensorType(config.floatX , (False,)*2)()
+        #P_unaries = T.TensorType(config.floatX , (False,)*3)()
+        #P_pairwise = T.TensorType(config.floatX , (False,)*2)()
+        P_unaries = sharedX(np.zeros((self.batch_size, self.num_indexes, self.num_labels), config.floatX))
+        P_pairwise = sharedX(np.zeros((self.batch_size, self.pairwise_indexes_max), config.floatX))
 
         """
         Fill the unary potentials.
@@ -396,7 +398,7 @@ class MLPCRF(Model):
             derivative_unaries = d_unaries_to_update
 
         if d_pairwise_to_update is None:
-            derivative_pairwise = sharedX(np.zeros((self.batch_size, self.num_indexes, self.num_labels, self.num_indexes, self.num_labels), config.floatX))
+            derivative_pairwise = sharedX(np.zeros((self.batch_size, self.pairwise_indexes_max), config.floatX))
         else:
             derivative_pairwise = d_pairwise_to_update
 
