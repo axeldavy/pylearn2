@@ -279,7 +279,7 @@ class MLPCRF(Model):
         #P_unaries = T.TensorType(config.floatX , (False,)*3)()
         #P_pairwise = T.TensorType(config.floatX , (False,)*2)()
         P_unaries = sharedX(np.zeros((self.batch_size, self.num_indexes, self.num_labels), config.floatX))
-        P_pairwise = sharedX(np.zeros((self.batch_size, self.pairwise_indexes_max), config.floatX))
+        P_pairwise = sharedX(np.zeros((self.batch_size, self.P_pairwise_length), config.floatX))
 
         """
         Fill the unary potentials.
@@ -418,7 +418,7 @@ class MLPCRF(Model):
             derivative_unaries = d_unaries_to_update
 
         if d_pairwise_to_update is None:
-            derivative_pairwise = sharedX(np.zeros((self.batch_size, self.pairwise_indexes_max), config.floatX))
+            derivative_pairwise = sharedX(np.zeros((self.batch_size, self.P_pairwise_length), config.floatX))
         else:
             derivative_pairwise = d_pairwise_to_update
 
