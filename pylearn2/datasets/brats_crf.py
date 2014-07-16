@@ -142,7 +142,7 @@ class BRATS(Dataset):
         labels_patch = labels[z, slice_x, slice_y]
 
         if pad:
-            labels_patch = numpy.pad(labels_patch, ((pad_xl, pad_xr), (pad_yl, pad_yr), (0, 0)), mode='constant')
+            labels_patch = numpy.pad(labels_patch, ((pad_xl, pad_xr), (pad_yl, pad_yr)), mode='constant')
 
         return im_patch.swapaxes(0,2), labels_patch
 
