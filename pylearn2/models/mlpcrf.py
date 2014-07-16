@@ -114,7 +114,6 @@ class CRFNeighborhood():
                                                         ]
                                                         , axis=0)
 
-
         self.pairwise_indexes = theano.shared(cumsum)
         self.pairwise_indexes_reshaped = theano.shared(self.indexes_reshaped)
         self.pairwise_indexes_neighbors_reshaped = theano.shared(self.indexes_neighbors_reshaped)
@@ -435,31 +434,21 @@ class MLPCRF(Model):
                lv = outputs[:, v]
                derivative[:, index(i,v)] += labelcost[li, lv]
         """
-        def fill_pairwise_derivative_for_neighbor(neighbor_index, index, labels_index, outputs):
-            labels_neighbor = outputs[:, neighbor_index]
-            return self.labelcost[labels_index, labels_neighbor]
-
-        def fill_pairwise_derivative(index, pairwise_index_start, pairwise_index_next, neighbors_indexes, neighborhoods_size, P_pairwise_d_current, outputs):
-            labels_index = outputs[:, index]
-            scan_outputs, scan_updates = theano.map(fn=fill_pairwise_derivative_for_neighbor, sequences=[neighbors_indexes[:neighborhoods_size]], non_sequences=[labels_index, outputs])
-            return T.inc_subtensor(P_pairwise_d_current[:, pairwise_index_start: pairwise_index_next], scan_outputs.T), scan_updates
+        def fill_pairwise_derivative(batch, outputs):
+            return T.inc_subtensor(derivative_pairwise[batch, :], self.labelcost.flatten()[self.num_labels*outputs[batch, self.pairwise_indexes_reshaped] + outputs[batch, self.pairwise_indexes_neighbors_reshaped]])
 
         scan_outputs, scan_updates = theano.scan(fn=fill_pairwise_derivative,
-                                                 sequences=
-                                                    [theano.tensor.arange(self.num_indexes),
-                                                     dict(input=self.pairwise_indexes, taps=[0, 1]),
-                                                     self.neighbors,
-                                                     self.neighborhoods_sizes],
-                                                 outputs_info=[derivative_pairwise],
-                                                 non_sequences=[outputs],
-                                                 n_steps=self.num_indexes)
+                                                 sequences=[T.arange(self.batch_size)]
+                                                 outputs_info=T.zeros_like(np.zeros((self.batch_size, self.P_pairwise_length))),
+                                                 non_sequences=[outputs])
+        
         derivative_pairwise = scan_outputs[-1]
 
         """
         Fill the unary potentials derivatives.
         Does an equivalent of:
         for b in batches:
-            derivative[b, :, outputs[b, :]] += 1
+            derivative[b, :, :] = one_hot(output)
         """
 
         
@@ -468,9 +457,15 @@ class MLPCRF(Model):
         derivative_unaries = scan_outputs[-1]
         scan_updates.update(scan_updates_2)
 
+        """
+        Fill the labelcost potentials derivatives.
+        Does an equivalent of:
+        for b in batches:
+            derivative[b, :, outputs[b, :]] += 1
+        """
         def calculate_grad_cost_for_batch(batch, current_labelcost_d, P_pairwise, outputs):
             M = theano.shared(np.zeros((self.P_pairwise_length, self.num_labels**2), dtype=np.int8))
-            T.set_subtensor(M[T.arange(self.P_pairwise_length), self.num_labels*outputs[batch, self.pairwise_indexes_reshaped] + outputs[batch, self.pairwise_indexes_neighbors_reshaped]], 1)
+            M = T.set_subtensor(M[T.arange(self.P_pairwise_length), self.num_labels*outputs[batch, self.pairwise_indexes_reshaped] + outputs[batch, self.pairwise_indexes_neighbors_reshaped]], 1)
             return current_labelcost_d + (P_pairwise[b, :].T * M).sum(axis=1).reshape(5, 5)
 
         scan_outputs, scan_updates_3 = theano.reduce(fn=calculate_grad_cost_for_batch, sequences=[T.arange(self.batch_size)],
