@@ -96,7 +96,6 @@ class ConstrastiveDivergence(Cost):
         X, Y = data
         assert Y is not None
 
-        Y = Y.reshape((model.batch_size,) + tuple(model.output_size))
         P_unaries, P_pairwise, get_potentials_updates = model.get_potentials(X)
 
         pos_phase_energy, pos_updates = self._get_positive_phase(model, P_unaries, P_pairwise, Y)
