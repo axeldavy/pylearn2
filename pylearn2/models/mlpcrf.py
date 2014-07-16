@@ -22,6 +22,7 @@ from pylearn2.space import IndexSpace
 from pylearn2.utils import py_integer_types
 from pylearn2.utils import sharedX
 from pylearn2.utils import wraps
+from pylearn2.utils import safe_zip
 from pylearn2.utils.rng import make_theano_rng
 
 class CRFNeighborhood():
@@ -106,7 +107,17 @@ class CRFNeighborhood():
 
         cumsum = np.cumsum(np.append(0, self.neighborhoods_sizes))
         self.pairwise_indexes_max = cumsum[-1]
+        self.indexes_reshaped = np.arange(lattice_length).repeat(self.neighborhoods_sizes)
+        self.indexes_neighbours_reshaped = np.concatenate([
+                                                        neighbors[:neighborhoods_size]
+                                                        for (neighbors, neighborhoods_size) in safe_zip(self.neighborhoods, self.neighborhoods_sizes)
+                                                        ]
+                                                        , axis=0)
+
+
         self.pairwise_indexes = theano.shared(cumsum)
+        self.pairwise_indexes_reshaped = theano.shared(self.indexes_reshaped)
+        self.pairwise_indexes_neighbours_reshaped = theano.shared(self.indexes_neighbours_reshaped)
         self.neighborhoods_sizes = theano.shared(self.neighborhoods_sizes)
         self.neighborhoods = theano.shared(self.neighborhoods)
 
@@ -335,12 +346,12 @@ class MLPCRF(Model):
         """
         """
         Calculate the pairwise potentials energy.
-        Does an equivalent of:
+        Does an equivalent of :
         for b in batches
             for i in index:
                 li = outputs[b, i]
                 lv = outputs[b, neighbors(i)]
-                energy[b] += P_pairwise[b, i, li, v, lv].sum()
+                energy[b] += P_pairwise[b, index(i, neighbors(i))]'*Labelcosts[li, lv]
         """
         def fill_pairwise_energy_for_index(current_P_index, next_P_index, index, neighbors_indexes, neighborhoods_size, current_energy, P_pairwise, outputs, batch):
             return current_energy + T.dot(P_pairwise[batch, current_P_index:next_P_index],
@@ -361,6 +372,15 @@ class MLPCRF(Model):
                                                     non_sequences=[P_pairwise, outputs])
 
         energy_pairwise = scan_outputs
+
+        """
+        Calculate the unary potentials energy.
+        Does an equivalent of :
+        for b in batches
+            for i in index:
+                li = outputs[b, i]
+                energy[b] += P_unaries[b, i, li]
+        """
 
         def fill_energy_unaries_for_index(index, current_energy, batch):
             label = outputs[batch, index]
