@@ -266,9 +266,7 @@ class MLPCRF(Model):
 
         mlp_outputs_new_space = self.mlp_output_space.format_as(mlp_outputs_old_space, self.desired_mlp_output_space)
         P_unaries = T.TensorType(config.floatX , (False,)*3)()
-        P_unaries = T.specify_shape(P_unaries, (self.batch_size, self.num_indexes, self.num_labels))
         P_pairwise = T.TensorType(config.floatX , (False,)*2)()
-        P_pairwise = T.specify_shape(P_pairwise, (self.batch_size, self.P_pairwise_length))
 
         """
         Fill the unary potentials.
@@ -344,8 +342,7 @@ class MLPCRF(Model):
                                                             self.neighbors,
                                                             self.neighborhoods_sizes],
                                                 outputs_info=sharedX(0),
-                                                non_sequences=[P_pairwise, outputs, batch],
-                                                n_steps=self.num_indexes)
+                                                non_sequences=[P_pairwise, outputs, batch])
             return scan_outputs, scan_updates
 
         scan_outputs, scan_updates = theano.map(fn=fill_pairwise_energy_for_batch,

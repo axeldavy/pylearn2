@@ -98,11 +98,17 @@ class ConstrastiveDivergence(Cost):
 
         P_unaries, P_pairwise, get_potentials_updates = model.get_potentials(X)
 
-        pos_phase_grads, pos_updates = self._get_positive_phase(model, P_unaries, P_pairwise, Y)
+        pos_phase_energy, pos_updates = self._get_positive_phase(model, P_unaries, P_pairwise, Y)
 
-        neg_phase_grads, neg_updates = self._get_negative_phase(model, P_unaries, P_pairwise, Y)
+        neg_phase_energy, neg_updates = self._get_negative_phase(model, P_unaries, P_pairwise, Y)
 
-        energy = pos_phase_energy + neg_phase_energy
+        params = list(model.get_params())
+
+        gradients = OrderedDict(
+            safe_zip(params, T.grad(pos_phase_energy + neg_phase_energy,
+                                    params, consider_constant=[self.gibbs_var],
+                                    disconnected_inputs='ignore'))
+            )
 
         updates = OrderedDict()
         for key, val in get_potentials_updates.items():
@@ -111,10 +117,6 @@ class ConstrastiveDivergence(Cost):
             updates[key] = val
         for key, val in neg_updates.items():
             updates[key] = val
-
-        gradients = OrderedDict()
-        for param in list(pos_phase_grads.keys()):
-            gradients[param] = neg_phase_grads[param] + pos_phase_grads[param]
 
         return gradients, updates
 
@@ -125,23 +127,8 @@ class ConstrastiveDivergence(Cost):
             WRITEME
         """
         positive_energy, positive_updates = model.calculate_energy(P_unaries, P_pairwise, Y)
-        #top_grad = OrderedDict()
-        #derivative_unaries, derivative_pairwise, positive_updates = model.calculate_derivates_energy(Y)
-        #top_grad[P_unaries] = derivative_unaries
-        #top_grad[P_pairwise] = derivative_pairwise
 
-        params = list(model.get_params())
-
-        pos_phase_grad = OrderedDict(
-            safe_zip(params, T.grad(positive_energy.mean(),
-                                    params,
-                                    disconnected_inputs='ignore'))
-            )
-        #pos_phase_grad = OrderedDict(
-        #    safe_zip(params, theano.subgraph_grad(params,[], start=top_grad)[0])
-        #    )
-
-        return pos_phase_grad, positive_updates
+        return positive_energy.mean(), positive_updates
 
     def _get_negative_phase(self, model, P_unaries, P_pairwise, Y):
         """
@@ -166,12 +153,4 @@ class ConstrastiveDivergence(Cost):
         for key, val in samples_energies_updates.items():
             updates[key] = val
 
-        params = list(model.get_params())
-
-        neg_phase_grad = OrderedDict(
-            safe_zip(params, T.grad(-samples_energies_outputs.mean(),
-                                    params, consider_constant=[self.gibbs_var],
-                                    disconnected_inputs='ignore'))
-            )
-
-        return neg_phase_grad, updates
+        return -samples_energies_outputs.mean(), updates
