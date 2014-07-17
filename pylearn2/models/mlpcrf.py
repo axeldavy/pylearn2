@@ -294,7 +294,7 @@ class MLPCRF(Model):
 
         def fill_unaries_for_index(bounds, index, P_unaries_current, mlp_outputs, unaries_vectors):            
             mlp_outputs_seen = mlp_outputs[:, bounds[0]:bounds[1], bounds[2]:bounds[3], :].reshape((self.batch_size, self.desired_mlp_output_space.num_channels * self.unaries_pool_shape[0] * self.unaries_pool_shape[1]))
-            return T.set_subtensor(P_unaries_current[:, index, :], T.dot(mlp_outputs_seen, unaries_vectors.T))
+            return T.set_subtensor(P_unaries_current[:, index, :], T.dot(mlp_outputs_seen, unaries_vectors))
         scan_outputs, scan_updates_unaries = theano.scan(fn=fill_unaries_for_index, sequences=[self.window_bounds_for_index, T.arange(self.num_indexes)], outputs_info=[P_unaries], non_sequences=[mlp_outputs_new_space, self.unaries_vectors])
         P_unaries = scan_outputs[-1]
 
