@@ -293,7 +293,7 @@ class MLPCRF(Model):
         """
 
         def fill_unaries_for_index(bounds, index, P_unaries_current, mlp_outputs, unaries_vectors):            
-            mlp_outputs_seen = mlp_outputs[:, bounds[0]:bounds[1], bounds[2]:bounds[3], :].reshape(mlp_outputs.shape[0], -1)
+            mlp_outputs_seen = mlp_outputs[:, bounds[0]:bounds[1], bounds[2]:bounds[3], :].reshape((self.batch_size, -1))
             return T.set_subtensor(P_unaries_current[:, index, :], T.dot(mlp_outputs_seen, unaries_vectors.T))
         scan_outputs, scan_updates_unaries = theano.scan(fn=fill_unaries_for_index, sequences=[self.window_bounds_for_index, T.arange(self.num_indexes)], outputs_info=[P_unaries], non_sequences=[mlp_outputs_new_space, self.unaries_vectors])
         P_unaries = scan_outputs[-1]
@@ -476,7 +476,7 @@ class MLPCRF(Model):
         def calculate_grad_cost_for_batch(batch, current_labelcost_d, P_pairwise, outputs):
             M = theano.shared(np.zeros((self.P_pairwise_length, self.num_labels**2), dtype=np.int8))
             M = T.set_subtensor(M[:, self.num_labels*outputs[batch, self.pairwise_indexes_reshaped] + outputs[batch, self.pairwise_indexes_neighbors_reshaped]], 1)
-            return current_labelcost_d + (P_pairwise[b, :].T * M).sum(axis=1).reshape(5, 5)
+            return current_labelcost_d + (P_pairwise[b, :].T * M).sum(axis=1).reshape((5, 5))
 
         scan_outputs, scan_updates_3 = theano.reduce(fn=calculate_grad_cost_for_batch, sequences=[T.arange(self.batch_size)],
                                                      outputs_info=[derivative_labelcost],
