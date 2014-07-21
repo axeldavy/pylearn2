@@ -27,11 +27,23 @@ from pylearn2.utils import safe_zip
 from pylearn2.utils.rng import make_theano_rng
 
 
-def one_hot_theano(output):
+def one_hot_theano(t, r=None):
     """
-    WRITEME
+    given a tensor t of dimension d with integer values from range(r), return a
+    new tensor of dimension d + 1 with values 0/1, where the last dimension
+    gives a one-hot representation of the values in t.
+    
+    if r is not given, r is set to max(t) + 1
     """
-    #TODO
+    if r is None:
+        r = T.max(t) + 1
+        
+    ranges = T.shape_padleft(T.arange(r), t.ndim)
+    return T.eq(ranges, T.shape_padright(t, 1))
+
+
+def get_next_16_multiple(num):
+    return ((int(num) + 31) / 16) * 16
 
 
 class MLPCRF(Model):
@@ -72,8 +84,6 @@ class MLPCRF(Model):
         self.neighborhood = neighborhood
 
         self.unaries_pool_shape = unaries_pool_shape
-        self.window_bounds_for_index = get_window_bounds_for_index(output_shape, unaries_pool_shape)
-        self.window_centers = get_window_center_for_index(output_shape, unaries_pool_shape)
         self.num_labels = num_labels
         self.theano_rng = make_theano_rng(None, 2014+8+7, which_method="multinomial")
 
@@ -95,32 +105,36 @@ class MLPCRF(Model):
                                               axes=('c', 0, 1, 'b'),
                                               num_channels=self.mlp_output_space.num_channels)
         self.unaries_convolution = MaxoutConvC01B(
-                                                  num_labels,
+                                                  get_next_16_multiple(num_labels),
                                                   1,
                                                   unaries_pool_shape,
                                                   [1, 1],
                                                   [1, 1],
                                                   'unaries_convolution',
+                                                  irange=.005,
                                                   pad=0,
-                                                  min_zeros=False,
+                                                  min_zero=False,
+                                                  max_kernel_norm=0.9,
                                                   no_bias=True
                                                   )
         self.pairwise_convolution = MaxoutConvC01B(
-                                                  num_labels ** 2,
+                                                  get_next_16_multiple(num_labels ** 2),
                                                   1,
                                                   [1, 1],
                                                   [1, 1],
                                                   [1, 1],
                                                   'pairwise_convolution',
+                                                  irange=.005,
                                                   pad=0,
-                                                  min_zeros=False,
+                                                  min_zero=False,
+                                                  max_kernel_norm=0.9,
                                                   no_bias=True
                                                   )
         self.unaries_convolution.mlp = self.mlp
         self.pairwise_convolution.mlp = self.mlp
         self.unaries_convolution.set_input_space(self.desired_mlp_output_space)
         self.pairwise_convolution.set_input_space(self.desired_mlp_output_space) #Perhaps something to do here
-        self.zeros_output_shape = sharedX(np.zeros((num_labels,) + self.output_shape + (self.batch_size,)))
+        self.zeros_output_shape = sharedX(np.zeros((num_labels,) + tuple(self.output_shape) + (self.batch_size,)))
 
         self.output_space = IndexSpace(num_labels, self.num_indexes)
 
@@ -187,9 +201,9 @@ class MLPCRF(Model):
 
         mlp_outputs_new_space = self.mlp_output_space.format_as(mlp_outputs_old_space, self.desired_mlp_output_space)
 
-        P_unaries = self.unaries_convolution.fprop(mlp_outputs_new_space)
+        P_unaries = self.unaries_convolution.fprop(mlp_outputs_new_space)[:self.num_labels, :, :, :]
 
-        zeros = sharedX(np.zeros((self.mlp_output_space.num_channels,) + self.output_shape + (self.batch_size,)))
+        zeros = sharedX(np.zeros((self.mlp_output_space.num_channels,) + tuple(self.output_shape) + (self.batch_size,)))
         pairwise_inputs = mlp_outputs_new_space[:,
                                                 self.unaries_pool_shape[0]//2:(self.unaries_pool_shape[0]//2 + self.output_shape[0]),
                                                 self.unaries_pool_shape[1]//2:(self.unaries_pool_shape[1]//2 + self.output_shape[1]),
@@ -224,7 +238,7 @@ class MLPCRF(Model):
             input_for_edge = T.abs_(input_for_edge)
 
             P_pairwise.append(
-                self.pairwise_convolution.fprop(input_for_edge)
+                self.pairwise_convolution.fprop(input_for_edge)[:self.num_labels ** 2, :, :, :]
                 )
         P_pairwise = T.stacklists(P_pairwise)
 
@@ -248,7 +262,7 @@ class MLPCRF(Model):
         energy : tensor
         """
 
-        one_hot_output = one_hot_theano(outputs)
+        one_hot_output = one_hot_theano(outputs, r=self.num_labels)
 
         energy_unaries = T.dot(one_hot_output.flatten(), P_unaries.flatten())
 
@@ -276,9 +290,9 @@ class MLPCRF(Model):
                 slice_y_right = slice(None)
 
             label_neighbor_combination = T.set_subtensor(self.zeros_output_shape, outputs[slice_x_left, slice_y_left, :] * 5 + outputs[slice_x_right, slice_y_right, :])
-            energy_pairwise = energy_pairwise + T.dot(one_hot_theano(label_neighbor_combination).flatten(), P_pairwise[i, ...].flatten())
+            energy_pairwise = energy_pairwise + T.dot(one_hot_theano(label_neighbor_combination, r=(self.num_labels ** 2)).flatten(), P_pairwise[i, ...].flatten())
 
-        return (energy_unaries + energy_pairwise) / self.batch_size
+        return (energy_unaries + energy_pairwise) / self.batch_size, OrderedDict()
 
     def gibbs_sample_step(self, P_unaries, P_pairwise, current_outputs):
         """

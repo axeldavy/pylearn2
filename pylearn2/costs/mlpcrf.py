@@ -91,12 +91,15 @@ class ConstrastiveDivergence(Cost):
 
             WRITEME
         """
-        self.gibbs_var = theano.shared(np.zeros((self.num_gibbs_steps, model.batch_size, model.num_indexes), dtype = np.int)) 
+        self.gibbs_var = theano.shared(np.zeros((self.num_gibbs_steps, model.output_shape[0], model.output_shape[1], model.batch_size), dtype = np.int)) 
         self.get_data_specs(model)[0].validate(data)
         X, Y = data
         assert Y is not None
 
-        P_unaries, P_pairwise, get_potentials_updates = model.get_potentials(X)
+        Y = Y.reshape((model.batch_size, model.output_shape[0], model.output_shape[1]))
+        Y = Y.dimshuffle((1, 2, 0))
+
+        P_unaries, P_pairwise = model.get_potentials(X)
 
         pos_phase_energy, pos_updates = self._get_positive_phase(model, P_unaries, P_pairwise, Y)
 
@@ -111,8 +114,6 @@ class ConstrastiveDivergence(Cost):
             )
 
         updates = OrderedDict()
-        for key, val in get_potentials_updates.items():
-            updates[key] = val
         for key, val in pos_updates.items():
             updates[key] = val
         for key, val in neg_updates.items():
