@@ -91,7 +91,7 @@ class ConstrastiveDivergence(Cost):
 
             WRITEME
         """
-        self.gibbs_var = theano.shared(np.zeros((self.num_gibbs_steps, model.batch_size, model.num_indexes), dtype = np.int64)) 
+        self.gibbs_var = theano.shared(np.zeros((self.num_gibbs_steps, model.batch_size, model.num_indexes), dtype = np.int)) 
         self.get_data_specs(model)[0].validate(data)
         X, Y = data
         assert Y is not None
@@ -128,7 +128,7 @@ class ConstrastiveDivergence(Cost):
         """
         positive_energy, positive_updates = model.calculate_energy(P_unaries, P_pairwise, Y)
 
-        return positive_energy.mean(), positive_updates
+        return positive_energy, positive_updates
 
     def _get_negative_phase(self, model, P_unaries, P_pairwise, Y):
         """

@@ -679,6 +679,8 @@ class MaxoutConvC01B(Layer):
             can be normalized as well
     kernel_stride : tuple, optional
         vertical and horizontal pixel stride between each detector.
+    no_bias : bool, optional
+        Whether the model should use no bias term.
     """
 
     def __init__(self,
@@ -703,7 +705,8 @@ class MaxoutConvC01B(Layer):
                  detector_normalization=None,
                  min_zero=False,
                  output_normalization=None,
-                 kernel_stride=(1, 1)):
+                 kernel_stride=(1, 1),
+                 no_bias=False):
         check_cuda(str(type(self)))
 
         detector_channels = num_channels * num_pieces
@@ -726,7 +729,7 @@ class MaxoutConvC01B(Layer):
             W, = self.transformer.get_params()
             rval[W] = self.W_lr_scale
 
-        if self.b_lr_scale is not None:
+        if not self.no_bias and self.b_lr_scale is not None:
             rval[self.b] = self.b_lr_scale
 
         return rval
@@ -830,8 +833,9 @@ class MaxoutConvC01B(Layer):
         rval = self.transformer.get_params()
         assert not isinstance(rval, set)
         rval = list(rval)
-        assert self.b not in rval
-        rval.append(self.b)
+        if not self.no_bias:
+            assert self.b not in rval
+            rval.append(self.b)
         return rval
 
     @functools.wraps(Layer.get_weight_decay)
@@ -901,14 +905,16 @@ class MaxoutConvC01B(Layer):
             state_below = T.concatenate((state_below, zeros), axis=0)
 
         z = self.transformer.lmul(state_below)
-        if not hasattr(self, 'tied_b'):
-            self.tied_b = False
-        if self.tied_b:
-            b = self.b.dimshuffle(0, 'x', 'x', 'x')
-        else:
-            b = self.b.dimshuffle(0, 1, 2, 'x')
 
-        z = z + b
+        if not self.no_bias:
+            if not hasattr(self, 'tied_b'):
+                self.tied_b = False
+            if self.tied_b:
+                b = self.b.dimshuffle(0, 'x', 'x', 'x')
+            else:
+                b = self.b.dimshuffle(0, 1, 2, 'x')
+            z = z + b
+
         if self.layer_name is not None:
             z.name = self.layer_name + '_z'
 
