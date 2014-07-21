@@ -331,6 +331,33 @@ class MLPCRF(Model):
 
         return P_unaries, P_pairwise, scan_updates_unaries
 
+    def propagate_gradient(self, derivative_unaries, derivative_pairwise):
+        """
+        TODO
+        """
+
+        #TODO: init
+
+        def fill_gradient_for_unaries(bounds, index, d_P_unaries_for_index, d_mlp_output, d_unaries_vectors, mlp_outputs, unaries_vectors):
+            mlp_outputs_seen = mlp_outputs[:, bounds[0]:bounds[1], bounds[2]:bounds[3], :].reshape((self.batch_size, self.desired_mlp_output_space.num_channels * self.unaries_pool_shape[0] * self.unaries_pool_shape[1]))
+            d_mlp_output = T.inc_subtensor(d_mlp_output[:, bounds[0]:bounds[1], bounds[2]:bounds[3], :], T.dot(d_P_unaries_for_index, unaries_vectors.T).reshape((self.batch_size, self.unaries_pool_shape[0], self.unaries_pool_shape[1], self.desired_mlp_output_space.num_channels)))
+            d_unaries_vectors = T.dot(d_P_unaries_for_index.T, mlp_outputs_seen)
+            return [d_mlp_output, d_unaries_vectors]
+
+        def fill_gradient_for_pairwise(index, pairwise_index_start, pairwise_index_next, neighbors, neighborhoods_size, d_mlp_output, d_pairwise_vector, mlp_outputs, pairwise_vector, d_P_pairwise):
+            pairwise_feature_index = mlp_outputs[:, self.window_centers[index, 0], self.window_centers[index, 1], :]
+            neighbors_list = neighbors[:neighborhoods_size]
+            pairwise_features_neighbors = mlp_outputs[:, self.window_centers[neighbors_list, 0], self.window_centers[neighbors_list, 1], :] # indexing with two lists is done on cpu right now :-(. reshape ?
+            sub_feat = features_neighbors - feature_index[:, None, :]
+            neighbor_greater = T.switch(sub_feat > 0, 1., T.switch(sub_feat == 0, 0, -1))
+            d_abs_fn_fi = neighbor_greater * d_P_pairwise[:,:,None] * pairwise_vector[None, None, :]
+            d_mlp_output = T.inc_subtensor(d_mlp_output[:, self.window_centers[neighbors_list, 0], self.window_centers[neighbors_list, 1], :], d_abs_fn_fi)
+            d_mlp_output = T.inc_subtensor(d_mlp_output[:, self.window_centers[index, 0], self.window_centers[index, 1], :], -d_abs_fn_fi.sum(axis=1))
+            d_pairwise_vector = T.inc_subtensor(d_pairwise_vector, T.tensordot(d_P_pairwise, T.abs_(sub_feat), axes=[[0,1],[0,1]]))
+            return [d_mlp_output, d_pairwise_vector]
+
+         
+
     def calculate_energy(self, P_unaries, P_pairwise, outputs):
         """
         Calculate the energy
