@@ -906,7 +906,7 @@ class MaxoutConvC01B(Layer):
 
         z = self.transformer.lmul(state_below)
 
-        if not self.no_bias:
+        if not(hasattr(self, "no_bias")) or not self.no_bias:
             if not hasattr(self, 'tied_b'):
                 self.tied_b = False
             if self.tied_b:
