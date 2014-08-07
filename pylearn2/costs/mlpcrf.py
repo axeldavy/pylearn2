@@ -80,8 +80,8 @@ class PseudoLikelihood(Cost):
         P_pairwise = P_pairwise.dimshuffle((4, 2, 3, 0, 1))
         P_pairwise = P_pairwise.reshape((model.batch_size, model.num_indexes*model.num_neighbors, model.num_labels**2))
 
-        E_positve = compute_positive_energy(Y, Y_edges, P_unaries, P_pairwise, model.num_labels)
-        E_negative = compute_negative_energy(Y_v, P_unaries, P_pairwise, model.num_labels, model.batch_size, model.num_indexes, model.num_neighbors)
+        E_positve = self.compute_positive_energy(Y, Y_edges, P_unaries, P_pairwise, model.num_labels)
+        E_negative = self.compute_negative_energy(Y_v, P_unaries, P_pairwise, model.num_labels, model.batch_size, model.num_indexes, model.num_neighbors)
 
         return (E_positve + E_negative)
 
@@ -114,12 +114,12 @@ class PseudoLikelihood(Cost):
 
     def compute_positive_energy(output, output_edges, P_unaries, P_pairwise, num_labels):
         # compute positive energy unary part
-        M_positive_u = one_hot(output, num_labels)
+        M_positive_u = self.one_hot(output, num_labels)
         E_positive_u = M_positive_u*P_unaries
         E_positive_u = T.sum(E_positive_u)
 
         # compute positive energy pairwise part
-        M_positive_p = one_hot(output_edges, num_labels**2)
+        M_positive_p = self.one_hot(output_edges, num_labels**2)
         E_positive_p = M_positive_p*P_pairwise
         E_positive_p = T.sum(E_positive_p)
 
@@ -131,7 +131,7 @@ class PseudoLikelihood(Cost):
         E_negative_u = P_unaries
 
         # prepare a martix of 1 to compute the pairwise potential parts
-        M_negative_p = one_hot(th_outputs_v, num_labels)
+        M_negative_p = self.one_hot(th_outputs_v, num_labels)
         M_negative_p= T.tile(M_negative_p, (1, 1, num_labels))
 
         # compute the pairwise potential according to the state of the neighborhood

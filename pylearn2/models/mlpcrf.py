@@ -344,7 +344,6 @@ class MLPCRF(Model):
         P_pairwise = T.stacklists(P_pairwise) # TO transform the 4D matrices in a 5D matrix
 
         return P_unaries, P_pairwise
-            
 
     # def calculate_energy(self, P_unaries, P_pairwise, outputs):
     #     """
