@@ -14,6 +14,7 @@ import logging
 import warnings
 import numpy as np
 
+import theano
 from theano import config
 from theano import function
 from theano.compat.python2x import OrderedDict
@@ -352,6 +353,8 @@ class SGD(TrainingAlgorithm):
                                        name='sgd_update',
                                        on_unused_input='ignore',
                                        mode=self.theano_function_mode)
+#                                       mode="DebugMode")#self.theano_function_mode)
+        theano.printing.debugprint(self.sgd_update)
         self.params = params
 
     def train(self, dataset):
