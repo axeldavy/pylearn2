@@ -103,7 +103,7 @@ class PseudoLikelihood(Cost):
     def get_data_specs(self, model):
         return model.get_monitoring_data_specs()
 
-    def one_hot(t, r):
+    def one_hot(self, t, r):
         """
         given a tensor t of dimension d with integer values from range(r), return a
         new tensor of dimension d + 1 with values 0/1, where the last dimension
@@ -112,7 +112,7 @@ class PseudoLikelihood(Cost):
         ranges = T.shape_padleft(T.arange(r), t.ndim)
         return T.eq(ranges, T.shape_padright(t, 1))
 
-    def compute_positive_energy(output, output_edges, P_unaries, P_pairwise, num_labels):
+    def compute_positive_energy(self, output, output_edges, P_unaries, P_pairwise, num_labels):
         # compute positive energy unary part
         M_positive_u = self.one_hot(output, num_labels)
         E_positive_u = M_positive_u*P_unaries
@@ -126,7 +126,7 @@ class PseudoLikelihood(Cost):
         # compute positive part of the energy
         return (E_positive_u + E_positive_p)/num_batches
 
-    def compute_negative_energy(output_v, P_unaries, P_pairwise, num_labels, num_batches, num_indexes, num_neighbors):
+    def compute_negative_energy(self, output_v, P_unaries, P_pairwise, num_labels, num_batches, num_indexes, num_neighbors):
         # compute negative energy, unary part
         E_negative_u = P_unaries
 
