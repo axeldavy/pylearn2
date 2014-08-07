@@ -38,6 +38,98 @@ def one_hot_theano(t, r=None):
 def get_next_16_multiple(num):
     return ((int(num) + 31) / 16) * 16
 
+class CRFNeighborhood():
+    """
+    Implements the definition of a neighborhood for a CRF.
+    A CRFNeighborhood is initialized according to the size
+    of a rectangular lattice and a tuple of tuples which indicate
+    the relative position of the neighbors of the current_node.
+
+
+    Parameters
+    ----------
+    neighbors : a 2D matrix (theano tensor). Each raw i contains
+        the neighbors of the node i, plus eventually some meaningless 0.
+    neighbors_sizes : a vector which contains the sizes of the neighborhood
+        for each node in the graph. Using it help to stop before the
+        meaningless 0 of neighbors.
+    pairwise_indexes : a vector wich allows to access quickly to the good
+        raw in the pairwise potential tensor
+    """
+
+    def __init__(self, lattice_size, neighborhood_shape):
+        """
+        Creates an instance of the class given the size of a rectangular lattice
+        and a neighborhood shape. The nodes are indexed from left to right and
+        from top to bottom.
+
+        Parameters
+        ----------
+        lattice_size : a 2D vector which contains the size of the lattice.
+            The first elements is the number of raws in the lattice, the second
+            is for the columns.
+        neighborhood_shape : a tuple of tuple of relative neighbors.
+            A neighbor is define by a tuple (x, y) which corresponds to
+            the relative position of the neighbor of a given node.
+        """
+        neighborhoods_dict = dict()
+        # Iterate over the lattice
+        for y_current in range(lattice_size[0]):
+            for x_current in range(lattice_size[1]):
+                # Creates a list of neighbors if they are in the lattice
+                current_neighborhood = []
+                for current_neighbor in neighborhood_shape:
+
+                    current_neighbor_index = (y_current+current_neighbor[1])*lattice_size[1] + x_current+current_neighbor[0]
+
+                    # arbitrary assign the inexisting neighbor to 0
+                    # should not be a problem because the pairwise potential will be 0
+                    if (current_neighbor_index) < 0:
+                        current_neighbor_index = 0
+                    if (current_neighbor_index) >= (lattice_size[0]*lattice_size[1]):
+                        current_neighbor_index = 0
+
+                    current_neighborhood.append(current_neighbor_index)
+
+                neighborhoods_dict[y_current*lattice_size[1] + x_current] = current_neighborhood
+        # Changes the type of the dictionnary into theano tensors
+        self.neighbors_to_theano_tensor(lattice_size, neighborhoods_dict)
+
+    def neighbors_to_theano_tensor(self, lattice_size, neighborhoods_dict):
+        """
+        Creates two theano tensors which will contain the neighborhoods
+        and the sizes of these neighborhoods.
+
+        Parameters
+        ----------
+        lattice_size : 2D vector which contains the size of the lattice.
+        neighborhoods_dict : A python dictionnaire which contains the
+            indexes of the neighbors of the nodes in the graph.
+        """
+        lattice_length = lattice_size[0]*lattice_size[1]
+        self.neighborhoods_sizes = np.zeros((lattice_length)).astype(int)
+        for current_node in range(lattice_length):
+            self.neighborhoods_sizes[current_node] = len(neighborhoods_dict[current_node])
+
+        self.neighborhoods = np.zeros((lattice_length, np.max(self.neighborhoods_sizes))).astype(int)
+        for current_node in range(lattice_length):
+            self.neighborhoods[current_node, 0:self.neighborhoods_sizes[current_node]] = neighborhoods_dict[current_node]
+
+        cumsum = np.cumsum(np.append(0, self.neighborhoods_sizes))
+        self.pairwise_indexes_max = cumsum[-1]
+        self.indexes_reshaped = np.arange(lattice_length).repeat(self.neighborhoods_sizes)
+        self.indexes_neighbours_reshaped = np.concatenate([
+                                                        neighbors[:neighborhoods_size]
+                                                        for (neighbors, neighborhoods_size) in safe_zip(self.neighborhoods, self.neighborhoods_sizes)
+                                                        ]
+                                                        , axis=0)
+
+
+        self.pairwise_indexes = theano.shared(cumsum)
+        self.pairwise_indexes_reshaped = theano.shared(self.indexes_reshaped)
+        self.pairwise_indexes_neighbours_reshaped = theano.shared(self.indexes_neighbours_reshaped)
+        self.neighborhoods_sizes = theano.shared(self.neighborhoods_sizes)
+        self.neighborhoods = theano.shared(self.neighborhoods)
 
 class MLPCRF(Model):
     """
@@ -75,6 +167,11 @@ class MLPCRF(Model):
         self.num_indexes = output_shape[0] * output_shape[1]
 
         self.neighborhood = neighborhood
+        self.num_neighbors = len(neighborhood)
+
+        temp_neighborhood = CRFNeighborhood((output_shape[0], output_shape[1]), neighborhood)
+        self.indexes_reshaped = temp_neighborhood.pairwise_indexes_reshaped
+        self.indexes_neighbors_reshaped = temp_neighborhood.pairwise_indexes_neighbours_reshaped
 
         self.unaries_pool_shape = unaries_pool_shape
         self.num_labels = num_labels
@@ -244,105 +341,105 @@ class MLPCRF(Model):
             P_pairwise.append(
                 self.pairwise_convolution.fprop(input_for_edge)[:self.num_labels ** 2]#, :, :, :]
                 )
-        #P_pairwise = T.stacklists(P_pairwise) # TO transform the 4D matrices in a 5D matrix
+        P_pairwise = T.stacklists(P_pairwise) # TO transform the 4D matrices in a 5D matrix
 
         return P_unaries, P_pairwise
             
 
-    def calculate_energy(self, P_unaries, P_pairwise, outputs):
-        """
-        Calculate the energy
+    # def calculate_energy(self, P_unaries, P_pairwise, outputs):
+    #     """
+    #     Calculate the energy
 
-        Parameters
-        ----------
-        P_unaries : (num_labels, rows, cols, batch_size) tensor
-            The unary potentials of the CRF.
-        P_pairwise : (num_neighbors, num_labels ** 2, rows, cols, batch_size) tensor
-            The pairwise potentials of the CRF.
-        outputs : (rows, cols, batch_size) tensor
+    #     Parameters
+    #     ----------
+    #     P_unaries : (num_labels, rows, cols, batch_size) tensor
+    #         The unary potentials of the CRF.
+    #     P_pairwise : (num_neighbors, num_labels ** 2, rows, cols, batch_size) tensor
+    #         The pairwise potentials of the CRF.
+    #     outputs : (rows, cols, batch_size) tensor
 
-        Returns
-        -------
-        energy : tensor
-        """
+    #     Returns
+    #     -------
+    #     energy : tensor
+    #     """
 
-        #outputs = outputs.reshape((self.output_shape[0], self.output_shape[1], self.batch_size)) #If doubts about outputs shape, uncomment to fail if it doesn't have this size.
+    #     #outputs = outputs.reshape((self.output_shape[0], self.output_shape[1], self.batch_size)) #If doubts about outputs shape, uncomment to fail if it doesn't have this size.
 
-        one_hot_output = one_hot_theano(outputs, r=self.num_labels)
-        one_hot_output = one_hot_output.dimshuffle((3, 0, 1, 2))
+    #     one_hot_output = one_hot_theano(outputs, r=self.num_labels)
+    #     one_hot_output = one_hot_output.dimshuffle((3, 0, 1, 2))
 
-        #one_hot_output = one_hot_output.reshape((self.num_labels, self.output_shape[0], self.output_shape[1], self.batch_size))
+    #     #one_hot_output = one_hot_output.reshape((self.num_labels, self.output_shape[0], self.output_shape[1], self.batch_size))
 
-        energy_unaries = T.dot(one_hot_output.flatten(), P_unaries.flatten())
+    #     energy_unaries = T.dot(one_hot_output.flatten(), P_unaries.flatten())
 
-        energy_pairwise = 0
+    #     energy_pairwise = 0
 
-        for ((delta_x, delta_y), i) in safe_zip(self.neighborhood, xrange(len(self.neighborhood))):
-            if delta_x > 0:
-                slice_x_left = slice(None, -delta_x)
-                slice_x_right = slice(delta_x, None)
-            elif delta_x < 0:
-                slice_x_left = slice(-delta_x, None)
-                slice_x_right = slice(None, delta_x)
-            else:
-                slice_x_left = slice(None)
-                slice_x_right = slice(None)
+    #     for ((delta_x, delta_y), i) in safe_zip(self.neighborhood, xrange(len(self.neighborhood))):
+    #         if delta_x > 0:
+    #             slice_x_left = slice(None, -delta_x)
+    #             slice_x_right = slice(delta_x, None)
+    #         elif delta_x < 0:
+    #             slice_x_left = slice(-delta_x, None)
+    #             slice_x_right = slice(None, delta_x)
+    #         else:
+    #             slice_x_left = slice(None)
+    #             slice_x_right = slice(None)
 
-            if delta_y > 0:
-                slice_y_left = slice(None, -delta_y)
-                slice_y_right = slice(delta_y, None)
-            elif delta_y < 0:
-                slice_y_left = slice(-delta_y, None)
-                slice_y_right = slice(None, delta_y)
-            else:
-                slice_y_left = slice(None)
-                slice_y_right = slice(None)
+    #         if delta_y > 0:
+    #             slice_y_left = slice(None, -delta_y)
+    #             slice_y_right = slice(delta_y, None)
+    #         elif delta_y < 0:
+    #             slice_y_left = slice(-delta_y, None)
+    #             slice_y_right = slice(None, delta_y)
+    #         else:
+    #             slice_y_left = slice(None)
+    #             slice_y_right = slice(None)
 
-            label_neighbor_combination = outputs[slice_x_left, slice_y_left, :] * 5 + outputs[slice_x_right, slice_y_right, :]
-            #            label_neighbor_combination = T.set_subtensor(self.zeros_output_shape[slice_x_left, slice_y_left, :], outputs[slice_x_left, slice_y_left, :] * 5 + outputs[slice_x_right, slice_y_right, :]) # uncomment for 
-            #the P_pairwise 5D version
-            energy_pairwise = energy_pairwise + T.dot(one_hot_theano(label_neighbor_combination, r=(self.num_labels ** 2)).dimshuffle((3, 0, 1, 2)).flatten(), P_pairwise[i].flatten())#[i, :, :, :, :].flatten()) 5D version
+    #         label_neighbor_combination = outputs[slice_x_left, slice_y_left, :] * 5 + outputs[slice_x_right, slice_y_right, :]
+    #         #            label_neighbor_combination = T.set_subtensor(self.zeros_output_shape[slice_x_left, slice_y_left, :], outputs[slice_x_left, slice_y_left, :] * 5 + outputs[slice_x_right, slice_y_right, :]) # uncomment for 
+    #         #the P_pairwise 5D version
+    #         energy_pairwise = energy_pairwise + T.dot(one_hot_theano(label_neighbor_combination, r=(self.num_labels ** 2)).dimshuffle((3, 0, 1, 2)).flatten(), P_pairwise[i].flatten())#[i, :, :, :, :].flatten()) 5D version
 
-        return (energy_unaries + energy_pairwise) / self.batch_size, OrderedDict()
+    #     return (energy_unaries + energy_pairwise) / self.batch_size, OrderedDict()
 
-    def gibbs_sample_step(self, P_unaries, P_pairwise, current_outputs):
-        """
-        Does one iteration of gibbs sampling.
+    # def gibbs_sample_step(self, P_unaries, P_pairwise, current_outputs):
+    #     """
+    #     Does one iteration of gibbs sampling.
 
-        Parameters
-        ----------
-        P_unaries : (num_labels, rows, cols, batch_size) tensor
-            The unary potentials of the CRF.
-        P_pairwise : (num_neighbors, num_labels ** 2, rows, cols, batch_size) tensor
-            The pairwise potentials of the CRF.
-        current_outputs : (rows, cols, batch_size) tensor
+    #     Parameters
+    #     ----------
+    #     P_unaries : (num_labels, rows, cols, batch_size) tensor
+    #         The unary potentials of the CRF.
+    #     P_pairwise : (num_neighbors, num_labels ** 2, rows, cols, batch_size) tensor
+    #         The pairwise potentials of the CRF.
+    #     current_outputs : (rows, cols, batch_size) tensor
 
-        Returns
-        -------
-        new_output : (rows, cols, batch_size) tensor
-        updates : subclass of dictionary specifying the update rules for all shared variables
-        """
+    #     Returns
+    #     -------
+    #     new_output : (rows, cols, batch_size) tensor
+    #     updates : subclass of dictionary specifying the update rules for all shared variables
+    #     """
 
-        if not hasattr(self, 'neighbor_theano'):
-            grid_x = np.arange(self.output_shape[0])
-            grid_y = np.arange(self.output_shape[1])
-            grid_xy = np.meshgrid(grid_x, grid_y)
-            self.sequence_x = theano.shared(grid_xy[0].flatten())
-            self.sequence_y = theano.shared(grid_xy[0].flatten())
-            self.neighbor_theano = theano.shared(self.neighborhood)
-            self.theano_init_zero = sharedX(0.)
+    #     if not hasattr(self, 'neighbor_theano'):
+    #         grid_x = np.arange(self.output_shape[0])
+    #         grid_y = np.arange(self.output_shape[1])
+    #         grid_xy = np.meshgrid(grid_x, grid_y)
+    #         self.sequence_x = theano.shared(grid_xy[0].flatten())
+    #         self.sequence_y = theano.shared(grid_xy[0].flatten())
+    #         self.neighbor_theano = theano.shared(self.neighborhood)
+    #         self.theano_init_zero = sharedX(0.)
 
-        def update_case(x, y, current_outputs, P_unaries):
-            P_for_labels = T.exp(T.neg(P_unaries[:, x, y, :].T))# +  sum_P_pairwise))
-            probabilities = P_for_labels / T.sum(P_for_labels, axis=1)[:,None] # num_batches x num_labels
-            update_case = self.theano_rng.multinomial(pvals=probabilities)
-            update_case = T.argmax(update_case, axis=1) # convert from one_hot
-            new_output = T.set_subtensor(current_outputs[x, y, :], update_case)
-            return new_output#, update
-        scan_outputs, scan_updates = theano.scan(fn=update_case,
-                                                 sequences=[self.sequence_x,
-                                                            self.sequence_y],
-                                                 outputs_info=[current_outputs],
-                                                 non_sequences=[P_unaries])
-        return scan_outputs[-1], scan_updates
+    #     def update_case(x, y, current_outputs, P_unaries):
+    #         P_for_labels = T.exp(T.neg(P_unaries[:, x, y, :].T))# +  sum_P_pairwise))
+    #         probabilities = P_for_labels / T.sum(P_for_labels, axis=1)[:,None] # num_batches x num_labels
+    #         update_case = self.theano_rng.multinomial(pvals=probabilities)
+    #         update_case = T.argmax(update_case, axis=1) # convert from one_hot
+    #         new_output = T.set_subtensor(current_outputs[x, y, :], update_case)
+    #         return new_output#, update
+    #     scan_outputs, scan_updates = theano.scan(fn=update_case,
+    #                                              sequences=[self.sequence_x,
+    #                                                         self.sequence_y],
+    #                                              outputs_info=[current_outputs],
+    #                                              non_sequences=[P_unaries])
+    #     return scan_outputs[-1], scan_updates
 
