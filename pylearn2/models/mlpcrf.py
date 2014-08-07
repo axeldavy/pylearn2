@@ -342,7 +342,7 @@ class MLPCRF(Model):
                 self.pairwise_convolution.fprop(input_for_edge)[:self.num_labels ** 2]#, :, :, :]
                 )
         P_pairwise = T.stacklists(P_pairwise) # TO transform the 4D matrices in a 5D matrix
-
+        print(P_pairwise.shape)
         return P_unaries, P_pairwise
 
     # def calculate_energy(self, P_unaries, P_pairwise, outputs):
