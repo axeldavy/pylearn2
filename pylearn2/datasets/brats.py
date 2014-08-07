@@ -31,6 +31,7 @@ class BRATS(Dataset):
         path_analysis = preprocess(path_analysis)
 
         self.brain_set = BrainSet.from_path(path_brains)
+        self.num_channels_input = self.brain_set.brains[(self.brain_set.get_brains_names()[0])].images.shape[3]
         self.h5file = tables.openFile(path_analysis, mode = 'r')
         if distribution is not None:
             assert len(distribution) == 5
@@ -158,7 +159,7 @@ class BRATS(Dataset):
     def next(self):
         if (self.stochastic and self.count >= self.num_minibatches_train) or ((not (self.stochastic)) and self.count >= self.num_minibatches_test):
             raise StopIteration()
-        X = numpy.zeros((4, 32, 32, 128), dtype=numpy.float32)
+        X = numpy.zeros((self.num_channels_input, 32, 32, 128), dtype=numpy.float32)
         y = numpy.zeros((128, 5), dtype=numpy.float32)
         index = 0
         if self.stochastic:
