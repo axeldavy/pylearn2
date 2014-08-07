@@ -80,7 +80,7 @@ class PseudoLikelihood(Cost):
         P_pairwise = P_pairwise.dimshuffle((4, 2, 3, 0, 1))
         P_pairwise = P_pairwise.reshape((model.batch_size, model.num_indexes*model.num_neighbors, model.num_labels**2))
 
-        E_positve = self.compute_positive_energy(Y, Y_edges, P_unaries, P_pairwise, model.num_labels)
+        E_positve = self.compute_positive_energy(Y, Y_edges, P_unaries, P_pairwise, model.num_labels, model.batch_size)
         E_negative = self.compute_negative_energy(Y_v, P_unaries, P_pairwise, model.num_labels, model.batch_size, model.num_indexes, model.num_neighbors)
 
         return (E_positve + E_negative)
@@ -112,7 +112,7 @@ class PseudoLikelihood(Cost):
         ranges = T.shape_padleft(T.arange(r), t.ndim)
         return T.eq(ranges, T.shape_padright(t, 1))
 
-    def compute_positive_energy(self, output, output_edges, P_unaries, P_pairwise, num_labels):
+    def compute_positive_energy(self, output, output_edges, P_unaries, P_pairwise, num_labels, num_batches):
         # compute positive energy unary part
         M_positive_u = self.one_hot(output, num_labels)
         E_positive_u = M_positive_u*P_unaries
