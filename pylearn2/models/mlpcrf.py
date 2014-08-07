@@ -294,43 +294,43 @@ class MLPCRF(Model):
 
         return (energy_unaries + energy_pairwise) / self.batch_size, OrderedDict()
 
-    def gibbs_sample_step(self, P_unaries, P_pairwise, current_outputs):
-        """
-        Does one iteration of gibbs sampling.
+    # def gibbs_sample_step(self, P_unaries, P_pairwise, current_outputs):
+    #     """
+    #     Does one iteration of gibbs sampling.
 
-        Parameters
-        ----------
-        P_unaries : (num_labels, rows, cols, batch_size) tensor
-            The unary potentials of the CRF.
-        P_pairwise : (num_neighbors, num_labels ** 2, rows, cols, batch_size) tensor
-            The pairwise potentials of the CRF.
-        current_outputs : (rows, cols, batch_size) tensor
+    #     Parameters
+    #     ----------
+    #     P_unaries : (num_labels, rows, cols, batch_size) tensor
+    #         The unary potentials of the CRF.
+    #     P_pairwise : (num_neighbors, num_labels ** 2, rows, cols, batch_size) tensor
+    #         The pairwise potentials of the CRF.
+    #     current_outputs : (rows, cols, batch_size) tensor
 
-        Returns
-        -------
-        new_output : (rows, cols, batch_size) tensor
-        updates : subclass of dictionary specifying the update rules for all shared variables
-        """
+    #     Returns
+    #     -------
+    #     new_output : (rows, cols, batch_size) tensor
+    #     updates : subclass of dictionary specifying the update rules for all shared variables
+    #     """
 
-        if not hasattr(self, neighbor_theano):
-            grid_x = np.arange(self.output_shape[0])
-            grid_y = np.arange(self.output_shape[1])
-            grid_xy = np.meshgrid(x, y)
-            self.sequence_x = theano.shared(grid_xy[0].flatten())
-            self.sequence_y = theano.shared(grid_xy[0].flatten())
-            self.neighbor_theano = theano.shared(self.neighbor)
-            self.theano_init_zero = sharedX(0.)
+    #     if not hasattr(self, neighbor_theano):
+    #         grid_x = np.arange(self.output_shape[0])
+    #         grid_y = np.arange(self.output_shape[1])
+    #         grid_xy = np.meshgrid(x, y)
+    #         self.sequence_x = theano.shared(grid_xy[0].flatten())
+    #         self.sequence_y = theano.shared(grid_xy[0].flatten())
+    #         self.neighbor_theano = theano.shared(self.neighbor)
+    #         self.theano_init_zero = sharedX(0.)
 
-        def update_case(x, y, current_outputs, P_unaries):
-            P_for_labels = T.exp(T.neg(P_unaries[:, x, y, :].T))# +  sum_P_pairwise))
-            probabilities = P_for_labels / T.sum(P_for_labels, axis=1)[:,None] # num_batches x num_labels
-            update_case = self.theano_rng.multinomial(pvals=probabilities)
-            update_case = T.argmax(update_case, axis=1) # convert from one_hot
-            new_output = T.set_subtensor(current_outputs[:, index], update_case)
-            return new_output#, update
-        scan_outputs, scan_updates = theano.scan(fn=update_case,
-                                                 sequences=[self.sequence_x,
-                                                            self.sequence_y],
-                                                 outputs_info=[current_outputs],
-                                                 non_sequences=[P_unaries])
-        return scan_outputs[-1], scan_updates
+    #     def update_case(x, y, current_outputs, P_unaries):
+    #         P_for_labels = T.exp(T.neg(P_unaries[:, x, y, :].T))# +  sum_P_pairwise))
+    #         probabilities = P_for_labels / T.sum(P_for_labels, axis=1)[:,None] # num_batches x num_labels
+    #         update_case = self.theano_rng.multinomial(pvals=probabilities)
+    #         update_case = T.argmax(update_case, axis=1) # convert from one_hot
+    #         new_output = T.set_subtensor(current_outputs[:, index], update_case)
+    #         return new_output#, update
+    #     scan_outputs, scan_updates = theano.scan(fn=update_case,
+    #                                              sequences=[self.sequence_x,
+    #                                                         self.sequence_y],
+    #                                              outputs_info=[current_outputs],
+    #                                              non_sequences=[P_unaries])
+    #     return scan_outputs[-1], scan_updates
