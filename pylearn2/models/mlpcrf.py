@@ -26,21 +26,14 @@ from pylearn2.utils import wraps
 from pylearn2.utils import safe_zip
 from pylearn2.utils.rng import make_theano_rng
 
+epsilon = 2e-30#1.17e-38
 
 def one_hot_theano(t, r=None):
-    """
-    given a tensor t of dimension d with integer values from range(r), return a
-    new tensor of dimension d + 1 with values 0/1, where the last dimension
-    gives a one-hot representation of the values in t.
-    
-    if r is not given, r is set to max(t) + 1
-    """
     if r is None:
         r = T.max(t) + 1
         
     ranges = T.shape_padleft(T.arange(r), t.ndim)
-    return T.eq(ranges, T.shape_padright(t, 1))
-
+    return T.eq(ranges, T.shape_padright(t, 1)).astype(config.floatX)
 
 def get_next_16_multiple(num):
     return ((int(num) + 31) / 16) * 16
@@ -94,11 +87,11 @@ class MLPCRF(Model):
         if not (isinstance(self.mlp_output_space, Conv2DSpace)):
             raise ValueError("MLPCRF expects the MLP to output a Conv2DSpace")
 
-        if self.mlp_output_space.shape[0] <> self.unaries_pool_shape[0] + self.output_shape[0] or\
-           self.mlp_output_space.shape[1] <> self.unaries_pool_shape[1] + self.output_shape[1]:
+        if self.mlp_output_space.shape[0] <> self.unaries_pool_shape[0] + self.output_shape[0] - 1 or\
+           self.mlp_output_space.shape[1] <> self.unaries_pool_shape[1] + self.output_shape[1] - 1:
                raise ValueError("MLPCRF expects the MLP output to be of shape [" +\
-                                str(self.unaries_pool_shape[0] + self.output_shape[0]) + ", " +\
-                                str(self.unaries_pool_shape[1] + self.output_shape[1]) + "] but got " +\
+                                str(self.unaries_pool_shape[0] + self.output_shape[0] - 1) + ", " +\
+                                str(self.unaries_pool_shape[1] + self.output_shape[1] - 1) + "] but got " +\
                                 str(self.mlp_output_space.shape))
 
         self.desired_mlp_output_space = Conv2DSpace(shape=self.mlp_output_space.shape,
@@ -134,7 +127,7 @@ class MLPCRF(Model):
         self.pairwise_convolution.mlp = self.mlp
         self.unaries_convolution.set_input_space(self.desired_mlp_output_space)
         self.pairwise_convolution.set_input_space(self.desired_mlp_output_space) #Perhaps something to do here
-        self.zeros_output_shape = sharedX(np.zeros((num_labels,) + tuple(self.output_shape) + (self.batch_size,)))
+        self.zeros_output_shape = sharedX(np.zeros(tuple(self.output_shape) + (self.batch_size,), dtype=np.float32), name="zeros_output_shape")
 
         self.output_space = IndexSpace(num_labels, self.num_indexes)
 
@@ -142,6 +135,8 @@ class MLPCRF(Model):
     def get_monitoring_channels(self, data):
         X, Y = data
         rval = self.mlp.get_layer_monitoring_channels(state_below=X)
+        rval.update (self.unaries_convolution.get_monitoring_channels())
+        rval.update (self.pairwise_convolution.get_monitoring_channels())
         #rval['CRF_misclass'] = ??? Y: truth values, X:inputs
         #rval['CRF_Potentials_norm'] = ...
         return rval
@@ -157,6 +152,12 @@ class MLPCRF(Model):
                                 self.get_output_space()))
         source = (self.get_input_source(), self.get_target_source())
         return (space, source)
+
+    @wraps(Layer.censor_updates)
+    def censor_updates(self, updates):
+        self.mlp.censor_updates(updates)
+        self.unaries_convolution.censor_updates(updates)
+        self.pairwise_convolution.censor_updates(updates)
 
     @wraps(Model.get_params)
     def get_params(self):
@@ -203,7 +204,7 @@ class MLPCRF(Model):
 
         P_unaries = self.unaries_convolution.fprop(mlp_outputs_new_space)[:self.num_labels, :, :, :]
 
-        zeros = sharedX(np.zeros((self.mlp_output_space.num_channels,) + tuple(self.output_shape) + (self.batch_size,)))
+        zeros = sharedX(np.zeros((self.mlp_output_space.num_channels,) + tuple(self.output_shape) + (self.batch_size,), dtype=np.float32), name="zeros")
         pairwise_inputs = mlp_outputs_new_space[:,
                                                 self.unaries_pool_shape[0]//2:(self.unaries_pool_shape[0]//2 + self.output_shape[0]),
                                                 self.unaries_pool_shape[1]//2:(self.unaries_pool_shape[1]//2 + self.output_shape[1]),
@@ -232,15 +233,18 @@ class MLPCRF(Model):
             else:
                 slice_y_left = slice(None)
                 slice_y_right = slice(None)
+            # for the gibbs sampling, having 5D P_pairwise matrix is probably better, but I didn't manage to solve issues with that (epsilon still too small ?)
+            # so for now that mode is commented and instead it is a list of 4D matrices
+            #input_for_edge = T.set_subtensor(zeros[:, slice_x_left, slice_y_left, :], pairwise_inputs[:, slice_x_left, slice_y_left, :] - pairwise_inputs[:, slice_x_right, slice_y_right, :])
 
-            input_for_edge = T.set_subtensor(zeros[:, slice_x_left, slice_y_left, :],
-                                             pairwise_inputs[:, slice_x_left, slice_y_left, :] - pairwise_inputs[:, slice_x_right, slice_y_right, :])
-            input_for_edge = T.abs_(input_for_edge)
+            input_for_edge = pairwise_inputs[:, slice_x_left, slice_y_left, :] - pairwise_inputs[:, slice_x_right, slice_y_right, :]
+
+            input_for_edge = T.abs_(input_for_edge) + epsilon
 
             P_pairwise.append(
-                self.pairwise_convolution.fprop(input_for_edge)[:self.num_labels ** 2, :, :, :]
+                self.pairwise_convolution.fprop(input_for_edge)[:self.num_labels ** 2]#, :, :, :]
                 )
-        P_pairwise = T.stacklists(P_pairwise)
+        #P_pairwise = T.stacklists(P_pairwise) # TO transform the 4D matrices in a 5D matrix
 
         return P_unaries, P_pairwise
             
@@ -262,7 +266,12 @@ class MLPCRF(Model):
         energy : tensor
         """
 
+        #outputs = outputs.reshape((self.output_shape[0], self.output_shape[1], self.batch_size)) #If doubts about outputs shape, uncomment to fail if it doesn't have this size.
+
         one_hot_output = one_hot_theano(outputs, r=self.num_labels)
+        one_hot_output = one_hot_output.dimshuffle((3, 0, 1, 2))
+
+        #one_hot_output = one_hot_output.reshape((self.num_labels, self.output_shape[0], self.output_shape[1], self.batch_size))
 
         energy_unaries = T.dot(one_hot_output.flatten(), P_unaries.flatten())
 
@@ -289,8 +298,10 @@ class MLPCRF(Model):
                 slice_y_left = slice(None)
                 slice_y_right = slice(None)
 
-            label_neighbor_combination = T.set_subtensor(self.zeros_output_shape, outputs[slice_x_left, slice_y_left, :] * 5 + outputs[slice_x_right, slice_y_right, :])
-            energy_pairwise = energy_pairwise + T.dot(one_hot_theano(label_neighbor_combination, r=(self.num_labels ** 2)).flatten(), P_pairwise[i, ...].flatten())
+            label_neighbor_combination = outputs[slice_x_left, slice_y_left, :] * 5 + outputs[slice_x_right, slice_y_right, :]
+            #            label_neighbor_combination = T.set_subtensor(self.zeros_output_shape[slice_x_left, slice_y_left, :], outputs[slice_x_left, slice_y_left, :] * 5 + outputs[slice_x_right, slice_y_right, :]) # uncomment for 
+            #the P_pairwise 5D version
+            energy_pairwise = energy_pairwise + T.dot(one_hot_theano(label_neighbor_combination, r=(self.num_labels ** 2)).dimshuffle((3, 0, 1, 2)).flatten(), P_pairwise[i].flatten())#[i, :, :, :, :].flatten()) 5D version
 
         return (energy_unaries + energy_pairwise) / self.batch_size, OrderedDict()
 
@@ -312,13 +323,13 @@ class MLPCRF(Model):
         updates : subclass of dictionary specifying the update rules for all shared variables
         """
 
-        if not hasattr(self, neighbor_theano):
+        if not hasattr(self, 'neighbor_theano'):
             grid_x = np.arange(self.output_shape[0])
             grid_y = np.arange(self.output_shape[1])
-            grid_xy = np.meshgrid(x, y)
+            grid_xy = np.meshgrid(grid_x, grid_y)
             self.sequence_x = theano.shared(grid_xy[0].flatten())
             self.sequence_y = theano.shared(grid_xy[0].flatten())
-            self.neighbor_theano = theano.shared(self.neighbor)
+            self.neighbor_theano = theano.shared(self.neighborhood)
             self.theano_init_zero = sharedX(0.)
 
         def update_case(x, y, current_outputs, P_unaries):
@@ -326,7 +337,7 @@ class MLPCRF(Model):
             probabilities = P_for_labels / T.sum(P_for_labels, axis=1)[:,None] # num_batches x num_labels
             update_case = self.theano_rng.multinomial(pvals=probabilities)
             update_case = T.argmax(update_case, axis=1) # convert from one_hot
-            new_output = T.set_subtensor(current_outputs[:, index], update_case)
+            new_output = T.set_subtensor(current_outputs[x, y, :], update_case)
             return new_output#, update
         scan_outputs, scan_updates = theano.scan(fn=update_case,
                                                  sequences=[self.sequence_x,
@@ -334,3 +345,4 @@ class MLPCRF(Model):
                                                  outputs_info=[current_outputs],
                                                  non_sequences=[P_unaries])
         return scan_outputs[-1], scan_updates
+

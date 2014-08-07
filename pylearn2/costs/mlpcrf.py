@@ -91,7 +91,7 @@ class ConstrastiveDivergence(Cost):
 
             WRITEME
         """
-        self.gibbs_var = theano.shared(np.zeros((self.num_gibbs_steps, model.output_shape[0], model.output_shape[1], model.batch_size), dtype = np.int)) 
+        self.gibbs_var = theano.shared(np.zeros((self.num_gibbs_steps, model.output_shape[0], model.output_shape[1], model.batch_size), dtype = np.int), name='gibbs_var') 
         self.get_data_specs(model)[0].validate(data)
         X, Y = data
         assert Y is not None
