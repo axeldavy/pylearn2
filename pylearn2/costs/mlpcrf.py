@@ -93,9 +93,7 @@ class PseudoLikelihood(Cost):
         """
         self.get_data_specs(model)[0].validate(data)
         rval = OrderedDict()
-
-        # X, Y = data
-        rval['CRF_pseudo_likelihood'] = self.expr(model, data)
+        # rval['CRF_pseudo_likelihood'] = self.expr(model, data)
 
         return rval
 
@@ -131,7 +129,7 @@ class PseudoLikelihood(Cost):
         E_negative_u = P_unaries
 
         # prepare a martix of 1 to compute the pairwise potential parts
-        M_negative_p = self.one_hot(outputs_v, num_labels)
+        M_negative_p = self.one_hot(output_v, num_labels)
         M_negative_p= T.tile(M_negative_p, (1, 1, num_labels))
 
         # compute the pairwise potential according to the state of the neighborhood
