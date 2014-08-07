@@ -131,7 +131,7 @@ class PseudoLikelihood(Cost):
         E_negative_u = P_unaries
 
         # prepare a martix of 1 to compute the pairwise potential parts
-        M_negative_p = self.one_hot(th_outputs_v, num_labels)
+        M_negative_p = self.one_hot(outputs_v, num_labels)
         M_negative_p= T.tile(M_negative_p, (1, 1, num_labels))
 
         # compute the pairwise potential according to the state of the neighborhood
@@ -144,4 +144,4 @@ class PseudoLikelihood(Cost):
         E_negative_p = E_negative_p.reshape((num_batches, num_indexes, num_labels))
 
         # compute the negative part of the energy
-        return (T.log(T.exp(-E_negative_u_th-E_negative_p_th).sum(axis=2)).sum(axis=1)).sum(axis=0)/num_batches
+        return (T.log(T.exp(-E_negative_u-E_negative_p).sum(axis=2)).sum(axis=1)).sum(axis=0)/num_batches
