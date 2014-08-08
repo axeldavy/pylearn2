@@ -93,7 +93,7 @@ class PseudoLikelihood(Cost):
         """
         self.get_data_specs(model)[0].validate(data)
         rval = OrderedDict()
-        # rval['CRF_pseudo_likelihood'] = self.expr(model, data)
+        rval['CRF_pseudo_likelihood'] = self.expr(model, data)
 
         return rval
 
