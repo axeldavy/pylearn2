@@ -36,7 +36,7 @@ def one_hot_theano(t, r=None):
     return T.eq(ranges, T.shape_padright(t, 1)).astype(config.floatX)
 
 def get_next_16_multiple(num):
-    return ((int(num) + 31) / 16) * 16
+    return ((int(num + 1)) / 16 + 1) * 16
 
 class CRFNeighborhood():
     """
