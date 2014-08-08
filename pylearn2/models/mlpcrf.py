@@ -331,10 +331,9 @@ class MLPCRF(Model):
                 slice_y_left = slice(None)
                 slice_y_right = slice(None)
             # for the gibbs sampling, having 5D P_pairwise matrix is probably better, but I didn't manage to solve issues with that (epsilon still too small ?)
-            # so for now that mode is commented and instead it is a list of 4D matrices
-            #input_for_edge = T.set_subtensor(zeros[:, slice_x_left, slice_y_left, :], pairwise_inputs[:, slice_x_left, slice_y_left, :] - pairwise_inputs[:, slice_x_right, slice_y_right, :])
+            input_for_edge = T.set_subtensor(zeros[:, slice_x_left, slice_y_left, :], pairwise_inputs[:, slice_x_left, slice_y_left, :] - pairwise_inputs[:, slice_x_right, slice_y_right, :]) #5D
 
-            input_for_edge = pairwise_inputs[:, slice_x_left, slice_y_left, :] - pairwise_inputs[:, slice_x_right, slice_y_right, :]
+            #input_for_edge = pairwise_inputs[:, slice_x_left, slice_y_left, :] - pairwise_inputs[:, slice_x_right, slice_y_right, :] #list of 4D matrices
 
             input_for_edge = T.abs_(input_for_edge) + epsilon
 
