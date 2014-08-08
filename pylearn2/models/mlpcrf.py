@@ -26,7 +26,7 @@ from pylearn2.utils import wraps
 from pylearn2.utils import safe_zip
 from pylearn2.utils.rng import make_theano_rng
 
-epsilon = 2e-30#1.17e-38
+epsilon = 1e-5#2e-30#1.17e-38
 
 def one_hot_theano(t, r=None):
     if r is None:
