@@ -446,6 +446,7 @@ class MLPCRF(Model):
     #     return scan_outputs[-1], scan_updates
 
 def save_weights(mlp_layer, output_file):
-    weigths = mlp_layer.get_params()
-    weights = np.asarray(weights.value)
-    np.save(weights, output_file + str(accumulator))
+    weights = mlp_layer.get_params()
+    print(type(weights))
+    weights = np.asarray(weights)
+    np.save(output_file + str(accumulator), weights)
