@@ -224,7 +224,7 @@ class MLPCRF(Model):
         self.pairwise_convolution.mlp = self.mlp
         self.unaries_convolution.set_input_space(self.desired_mlp_output_space)
         self.pairwise_convolution.set_input_space(self.desired_mlp_output_space) #Perhaps something to do here
-        self.zeros_output_shape = sharedX(np.zeros(tuple(self.output_shape) + (self.batch_size,), dtype=np.float32), name="zeros_output_shape")
+        # self.zeros_output_shape = sharedX(np.zeros(tuple(self.output_shape) + (self.batch_size,), dtype=np.float32), name="zeros_output_shape")
 
         self.output_space = IndexSpace(num_labels, self.num_indexes)
 
