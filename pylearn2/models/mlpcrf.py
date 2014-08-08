@@ -1,6 +1,7 @@
 """
 This class implements an MLP followed by a CRF.
 """
+import numpy as np
 
 import functools
 import logging
@@ -234,7 +235,7 @@ class MLPCRF(Model):
         rval = self.mlp.get_layer_monitoring_channels(state_below=X)
         rval.update (self.unaries_convolution.get_monitoring_channels())
         rval.update (self.pairwise_convolution.get_monitoring_channels())
-        rval["conv_oo_wieghts"] = self.mlp.layers[0].get_weights()
+        #rval["conv_oo_wieghts"] = self.mlp.layers[0].get_params()[0]
         #rval['CRF_misclass'] = ??? Y: truth values, X:inputs
         #rval['CRF_Potentials_norm'] = ...
         return rval
