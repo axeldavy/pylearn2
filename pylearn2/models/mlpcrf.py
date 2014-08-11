@@ -27,7 +27,7 @@ from pylearn2.utils import wraps
 from pylearn2.utils import safe_zip
 from pylearn2.utils.rng import make_theano_rng
 
-epsilon = 1e-5#2e-30#1.17e-38
+epsilon = 1e-10#2e-30#1.17e-38
 accumulator = 0
 
 def one_hot_theano(t, r=None):
@@ -306,6 +306,7 @@ class MLPCRF(Model):
         P_unaries = self.unaries_convolution.fprop(mlp_outputs_new_space)[:self.num_labels, :, :, :]
 
         zeros = sharedX(np.zeros((self.mlp_output_space.num_channels,) + tuple(self.output_shape) + (self.batch_size,), dtype=np.float32), name="zeros")
+        #zeros = sharedX(epsilon * np.ones((self.mlp_output_space.num_channels,) + tuple(self.output_shape) + (self.batch_size,), dtype=np.float32), name="zeros")
         pairwise_inputs = mlp_outputs_new_space[:,
                                                 self.unaries_pool_shape[0]//2:(self.unaries_pool_shape[0]//2 + self.output_shape[0]),
                                                 self.unaries_pool_shape[1]//2:(self.unaries_pool_shape[1]//2 + self.output_shape[1]),
@@ -339,7 +340,9 @@ class MLPCRF(Model):
 
             #input_for_edge = pairwise_inputs[:, slice_x_left, slice_y_left, :] - pairwise_inputs[:, slice_x_right, slice_y_right, :] #list of 4D matrices
 
-            input_for_edge = T.abs_(input_for_edge) + epsilon
+            #input_for_edge = T.abs_(input_for_edge) + epsilon
+            input_for_edge = T.sqrt(input_for_edge**2 + epsilon)
+            #input_for_edge = T.max(T.abs_(input_for_edge + epsilon), T.abs_(input_for_edge - epsilon))
 
             P_pairwise.append(
                 self.pairwise_convolution.fprop(input_for_edge)[:self.num_labels ** 2]#, :, :, :]
