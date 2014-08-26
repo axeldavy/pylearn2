@@ -352,8 +352,8 @@ class SGD(TrainingAlgorithm):
                                        updates=updates,
                                        name='sgd_update',
                                        on_unused_input='ignore',
-#                                       mode=self.theano_function_mode)
-                                       mode="DebugMode")#self.theano_function_mode)
+                                       mode=self.theano_function_mode)
+#                                       mode="DebugMode")#self.theano_function_mode)
 #        theano.printing.debugprint(self.sgd_update)
         self.params = params
 
