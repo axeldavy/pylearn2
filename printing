@@ -1,0 +1,108 @@
+diff --git a/pylearn2/costs/mlpcrf.py b/pylearn2/costs/mlpcrf.py
+index e15457e..224cf7a 100644
+--- a/pylearn2/costs/mlpcrf.py
++++ b/pylearn2/costs/mlpcrf.py
+@@ -100,23 +100,32 @@ class ConstrastiveDivergence(Cost):
+ 
+         pos_phase_energy, pos_updates = self._get_positive_phase(model, P_unaries, P_pairwise, Y)
+ 
+-        neg_phase_energy, neg_updates = self._get_negative_phase(model, P_unaries, P_pairwise, Y)
+-
++#        neg_phase_energy, neg_updates = self._get_negative_phase(model, P_unaries, P_pairwise, Y)
++        print 'P_unaries_graph'
++        theano.printing.debugprint(P_unaries) 
++        print 'P_pairwise_graph'
++        theano.printing.debugprint(P_pairwise)
++        print 'pos_energy_graph'
++        theano.printing.debugprint(pos_phase_energy)
+         params = list(model.get_params())
+ 
+         gradients = OrderedDict(
+-            safe_zip(params, T.grad(pos_phase_energy + neg_phase_energy,
+-                                    params, consider_constant=[self.gibbs_var],
++            safe_zip(params, T.grad(pos_phase_energy,# + neg_phase_energy,
++                                    params,# consider_constant=[self.gibbs_var],
+                                     disconnected_inputs='ignore'))
+             )
+ 
++        for i in range(len(gradients)):
++            print params[i]
++            print theano.printing.debugprint(gradients[params[i]])
++
+         updates = OrderedDict()
+         for key, val in get_potentials_updates.items():
+             updates[key] = val
+         for key, val in pos_updates.items():
+             updates[key] = val
+-        for key, val in neg_updates.items():
+-            updates[key] = val
++#        for key, val in neg_updates.items():
++#            updates[key] = val
+ 
+         return gradients, updates
+ 
+@@ -153,4 +162,4 @@ class ConstrastiveDivergence(Cost):
+         for key, val in samples_energies_updates.items():
+             updates[key] = val
+ 
+-        return -samples_energies_outputs.mean(), updates
+\ No newline at end of file
++        return -samples_energies_outputs.mean(), updates
+diff --git a/pylearn2/models/mlpcrf.py b/pylearn2/models/mlpcrf.py
+index 3da969b..f6c078d 100644
+--- a/pylearn2/models/mlpcrf.py
++++ b/pylearn2/models/mlpcrf.py
+@@ -214,9 +214,9 @@ class MLPCRF(Model):
+         self.desired_mlp_output_space = Conv2DSpace(shape=self.mlp_output_space.shape,
+                                               axes=('b', 0, 1, 'c'),
+                                               num_channels=self.mlp_output_space.num_channels)
+-        self.pairwise_vector = sharedX(np.zeros((self.mlp_output_space.num_channels)))
+-        self.unaries_vectors = sharedX(np.zeros((unaries_pool_shape[0] * unaries_pool_shape[1] * self.mlp_output_space.num_channels, num_labels)))
+-        self.labelcost = sharedX(np.zeros((num_labels, num_labels)))
++        self.pairwise_vector = sharedX(np.zeros((self.mlp_output_space.num_channels)), name='pairwise_vector')
++        self.unaries_vectors = sharedX(np.zeros((unaries_pool_shape[0] * unaries_pool_shape[1] * self.mlp_output_space.num_channels, num_labels)), name='unaries_vector')
++        self.labelcost = sharedX(np.zeros((num_labels, num_labels)), name='labelcost')
+         self.output_space = IndexSpace(num_labels, output_size[0] * output_size[1])
+ 
+     @wraps(Model.get_monitoring_channels)
+@@ -281,8 +281,8 @@ class MLPCRF(Model):
+         mlp_outputs_new_space = self.mlp_output_space.format_as(mlp_outputs_old_space, self.desired_mlp_output_space)
+         #P_unaries = T.TensorType(config.floatX , (False,)*3)()
+         #P_pairwise = T.TensorType(config.floatX , (False,)*2)()
+-        P_unaries = sharedX(np.zeros((self.batch_size, self.num_indexes, self.num_labels), config.floatX))
+-        P_pairwise = sharedX(np.zeros((self.batch_size, self.P_pairwise_length), config.floatX))
++        P_unaries = sharedX(np.zeros((self.batch_size, self.num_indexes, self.num_labels), config.floatX), name='P_unaries')
++        P_pairwise = sharedX(np.zeros((self.batch_size, self.P_pairwise_length), config.floatX), name='P_pairwise')
+ 
+         """
+         Fill the unary potentials.
+@@ -294,7 +294,7 @@ class MLPCRF(Model):
+ 
+         def fill_unaries_for_index(bounds, index, P_unaries_current, mlp_outputs, unaries_vectors):            
+             mlp_outputs_seen = mlp_outputs[:, bounds[0]:bounds[1], bounds[2]:bounds[3], :].reshape((self.batch_size, self.desired_mlp_output_space.num_channels * self.unaries_pool_shape[0] * self.unaries_pool_shape[1]))
+-            return T.set_subtensor(P_unaries_current[:, index, :], T.dot(mlp_outputs_seen, unaries_vectors.T))
++            return T.set_subtensor(P_unaries_current[:, index, :], T.dot(mlp_outputs_seen, unaries_vectors))
+         scan_outputs, scan_updates_unaries = theano.scan(fn=fill_unaries_for_index, sequences=[self.window_bounds_for_index, T.arange(self.num_indexes)], outputs_info=[P_unaries], non_sequences=[mlp_outputs_new_space, self.unaries_vectors])
+         P_unaries = scan_outputs[-1]
+ 
+diff --git a/pylearn2/training_algorithms/sgd.py b/pylearn2/training_algorithms/sgd.py
+index 9140878..31423ba 100755
+--- a/pylearn2/training_algorithms/sgd.py
++++ b/pylearn2/training_algorithms/sgd.py
+@@ -13,7 +13,7 @@ __email__ = "goodfeli@iro"
+ import logging
+ import warnings
+ import numpy as np
+-
++import theano
+ from theano import config
+ from theano import function
+ from theano.compat.python2x import OrderedDict
+@@ -352,6 +352,7 @@ class SGD(TrainingAlgorithm):
+                                        name='sgd_update',
+                                        on_unused_input='ignore',
+                                        mode=self.theano_function_mode)
++        theano.printing.debugprint(self.sgd_update)
+         self.params = params
+ 
+     def train(self, dataset):

@@ -1,0 +1,9 @@
+diff a/pylearn2/models/model.py b/pylearn2/models/model.py	(rejected hunks)
+@@ -19,6 +19,7 @@ from pylearn2.space import NullSpace
+ from pylearn2.utils import function
+ from pylearn2.utils import safe_zip
+ from pylearn2.utils.track_version import MetaLibVersion
++from pylearn2.utils.data_specs import get_source_from_space
+ 
+ 
+ class Model(object):
